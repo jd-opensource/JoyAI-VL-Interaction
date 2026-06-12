@@ -4,7 +4,7 @@
 
 - 🚀 **Blog**: [JoyAI-VL-Interaction](https://joyai-vl-video-future-academy-jd.github.io/JoyAI-VL-Interaction/)
 - 💻 **Code**: [jd-opensource/JoyAI-VL-Interaction](https://github.com/jd-opensource/JoyAI-VL-Interaction)
-- 📄 **Technical Report**: [JoyAI-VL-Interaction-Reportv1.pdf](https://github.com/joyai-vl-video-future-academy-jd/JoyAI-VL-Interaction/blob/main/JoyAI-VL-Interaction-Reportv1.pdf)
+- 📄 **Technical Report**: [JoyAI-VL-Interaction-Reportv1.pdf](https://echovideo.jd.cn/JoyAI-VL-Interaction/JoyAI-VL-Interaction-Reportv1.pdf)
 
 https://github.com/user-attachments/assets/2853fc95-ad21-4972-8206-5f3d19798b14
 
