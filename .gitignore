@@ -89,3 +89,5 @@ coverage.xml
 **/codex-home/**
 !**/codex-home/
 !**/codex-home/.gitkeep
+
+.idea

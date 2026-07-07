@@ -449,6 +449,7 @@ def archive_chunk_response_records(
     query_start_time: Optional[str],
     chunk_index: int = 0,
     before_time_sec: float = float("inf"),
+    window: int = 0,
 ) -> None:
     if not current_chunk["response_records"] or not current_query_text:
         return
@@ -484,6 +485,15 @@ def archive_chunk_response_records(
             }
         )
 
+    # Unlike long_term_history, qa_history previously had no eviction at all:
+    # every query/response pair ever seen in the session was kept and resent
+    # in full on every subsequent turn, so a long enough session always
+    # eventually overflows the main model's context window regardless of
+    # max_model_len. Bound it the same way long_term_history is bounded.
+    qa_history = memory_state["qa_history"]
+    if window > 0 and len(qa_history) > window:
+        del qa_history[: len(qa_history) - window]
+
 
 @dataclass
 class AdapterConfig:
@@ -510,6 +520,7 @@ class AdapterConfig:
     use_prompt_as_query: bool = True
     force_silence_before_query: bool = True
     keep_qa_history: bool = True
+    qa_history_window: int = 40
     normalize_output: bool = True
     enable_summarizer: bool = True
     summarizer_model: str = "/tmp/models/Qwen3-VL-4B-Instruct"
@@ -950,6 +961,7 @@ class StreamingInferAdapter:
                 state.current_query_text,
                 state.query_start_time,
                 chunk_index=state.chunk_index,
+                window=self.config.qa_history_window,
             )
         total_time = time.time() - state.session_started_at
         output_path = state.output_path
@@ -1133,6 +1145,7 @@ class StreamingInferAdapter:
                     state.query_start_time,
                     chunk_index=state.chunk_index,
                     before_time_sec=qa_cutoff,
+                    window=self.config.qa_history_window,
                 )
             await self._flush_chunk(state, use_async_summary=self._async_summary_enabled())
             if (
@@ -1465,6 +1478,7 @@ class StreamingInferAdapter:
             old_query,
             old_start_time,
             chunk_index=state.chunk_index,
+            window=self.config.qa_history_window,
         )
         state.current_chunk["response_records"] = []
         state._pending_qa_archive = None
@@ -2368,6 +2382,14 @@ def parse_args() -> AdapterConfig:
         default=not _env_bool("KEEP_QA_HISTORY", True),
     )
     parser.add_argument(
+        "--qa-history-window",
+        type=int,
+        default=_env_int("QA_HISTORY_WINDOW", 40),
+        help="Max number of query/response entries to retain in qa_history "
+        "(like --long-term-memory-window; 0 disables trimming and restores "
+        "the old unbounded-growth behavior).",
+    )
+    parser.add_argument(
         "--no-normalize-output",
         action="store_true",
         default=not _env_bool("NORMALIZE_OUTPUT", True),
@@ -2649,6 +2671,7 @@ def parse_args() -> AdapterConfig:
         use_prompt_as_query=not args.no_prompt_as_query,
         force_silence_before_query=args.force_silence_before_query,
         keep_qa_history=not args.no_qa_history,
+        qa_history_window=args.qa_history_window,
         normalize_output=not args.no_normalize_output,
         enable_summarizer=not args.disable_summarizer,
         summarizer_model=args.summarizer_model,
