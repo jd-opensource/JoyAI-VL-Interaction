@@ -545,6 +545,7 @@ class AdapterConfig:
     long_term_repetition_penalty: float = 1.1
     long_term_presence_penalty: float = 0.0
     long_term_memory_window: int = 40
+    long_term_memory_max_tokens: int = 4000
     request_timeout_seconds: float = 300.0
     session_timeout_seconds: float = 3600.0
     out_dir: Optional[str] = None
@@ -1757,15 +1758,43 @@ class StreamingInferAdapter:
             long_term_entry["debug_input_path"] = debug_input_path
         state.long_term_history.append(long_term_entry)
 
+        # batch_compress_to_longterm() only appends each new compressed batch
+        # to the existing long_term_memory text and never re-compresses what's
+        # already there (see its docstring), so it grows without bound on its
+        # own. The entry-COUNT window below only limits how many batches are
+        # kept, not their combined size -- with `window` batches each up to
+        # long_term_max_tokens long, the reconstructed text can still be many
+        # times larger than any model's context window once enough batches
+        # accumulate (observed in practice: 5 batches already reached ~11k
+        # tokens). Also enforce a token BUDGET by dropping the oldest batches
+        # until the reconstructed text fits, regardless of entry count.
         window = int(self.config.long_term_memory_window or 0)
-        if window > 0 and len(state.long_term_history) > window:
-            dropped_count = len(state.long_term_history) - window
-            del state.long_term_history[:dropped_count]
-            state.memory_state["long_term_memory"] = "\n\n".join(
+        token_budget = int(self.config.long_term_memory_max_tokens or 0)
+
+        def _rebuild_long_term_memory() -> str:
+            return "\n\n".join(
                 entry["compressed_text"].rstrip()
                 for entry in state.long_term_history
                 if entry.get("compressed_text")
             )
+
+        trimmed = False
+        if window > 0 and len(state.long_term_history) > window:
+            dropped_count = len(state.long_term_history) - window
+            del state.long_term_history[:dropped_count]
+            trimmed = True
+
+        if token_budget > 0:
+            while (
+                len(state.long_term_history) > 1
+                and self.summarizer.estimate_tokens(_rebuild_long_term_memory())
+                > token_budget
+            ):
+                del state.long_term_history[0]
+                trimmed = True
+
+        if trimmed:
+            state.memory_state["long_term_memory"] = _rebuild_long_term_memory()
             token_count = self.summarizer.estimate_tokens(
                 state.memory_state["long_term_memory"]
             )
@@ -2515,6 +2544,19 @@ def parse_args() -> AdapterConfig:
         default=_env_int("LONG_TERM_MEMORY_WINDOW", 40),
     )
     parser.add_argument(
+        "--long-term-memory-max-tokens",
+        type=int,
+        default=_env_int("LONG_TERM_MEMORY_MAX_TOKENS", 4000),
+        help="Hard cap (estimated tokens) on the cumulative long_term_memory "
+        "text, enforced by dropping the oldest compressed batches. Unlike "
+        "--long-term-max-tokens (the per-call generation limit) and "
+        "--long-term-memory-window (an entry-COUNT limit), this bounds the "
+        "actual cumulative size: batch_compress_to_longterm() only appends "
+        "each new compressed batch and never re-compresses existing text, so "
+        "a count-based window alone can still leave long_term_memory many "
+        "times larger than any model's context window. Set to 0 to disable.",
+    )
+    parser.add_argument(
         "--request-timeout-seconds",
         type=float,
         default=_env_float("REQUEST_TIMEOUT_SECONDS", 300.0),
@@ -2696,6 +2738,7 @@ def parse_args() -> AdapterConfig:
         long_term_repetition_penalty=args.long_term_repetition_penalty,
         long_term_presence_penalty=args.long_term_presence_penalty,
         long_term_memory_window=args.long_term_memory_window,
+        long_term_memory_max_tokens=args.long_term_memory_max_tokens,
         request_timeout_seconds=args.request_timeout_seconds,
         out_dir=out_dir,
         light_out_dir=light_out_dir,
