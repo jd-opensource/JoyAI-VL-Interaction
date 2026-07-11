@@ -189,13 +189,15 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 - [ ] **量化版本** —— 实现更轻量、更低成本的部署
 - [ ] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
 
+## 😊 社区与支持
+
+欢迎大家加入实时讨论社区，交流使用问题、部署经验和改进建议。请扫描下方二维码加入微信群；如果二维码过期，请在 GitHub issue 中留言，维护者会更新最新的群邀请或联系方式。
+
+<div align="center">
+  <img src="weixin.jpg" alt="JoyAI-VL-Interaction 微信讨论群二维码" width="50%" />
+</div>
+
 ## 🙏 致谢
-
-* 基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) 和 [EasyVideoR1](https://github.com/cyuQ1n/EasyVideoR1) 构建 —— 分别用于 SFT 和 RL 训练
-* 网页界面基于 [Live VLM WebUI](https://github.com/nvidia-ai-iot/live-vlm-webui) 开发 —— NVIDIA 开源的实时 VLM 网页界面
-* 兼容 [vLLM](https://github.com/vllm-project/vllm)
-
-## 📝 引用
 
 如果 JoyAI-VL-Interaction 对你的研究或产品有帮助，请引用：
 
