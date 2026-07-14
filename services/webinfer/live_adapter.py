@@ -504,6 +504,9 @@ class AdapterConfig:
     main_repetition_penalty: float = 1.0
     main_presence_penalty: float = 0.0
     honor_inbound_generation_params: bool = False
+    main_context_max_tokens: int = 0
+    main_context_token_buffer: int = 512
+    image_context_token_estimate: int = 512
     chunk: int = 200
     compress_every_n_chunks: int = 5
     async_summary_lead_frames: int = 10
@@ -1223,9 +1226,12 @@ class StreamingInferAdapter:
             internal_messages, prefix_content = self._build_main_internal_messages(state)
             api_messages = self._build_cached_api_messages(state, internal_messages)
             generation_kwargs = self._main_generation_kwargs(payload)
-            http_messages = self._build_main_http_messages(api_messages)
-            turn_model_input_record = build_model_input_record(
-                chunk_index=state.chunk_index,
+            internal_messages, prefix_content = self._build_main_internal_messages(state)
+            if self.config.main_context_max_tokens > 0:
+                api_messages = [_internal_message_to_openai(message) for message in internal_messages]
+            else:
+                api_messages = self._build_cached_api_messages(state, internal_messages)
+            generation_kwargs = self._main_generation_kwargs(payload)
                 messages=http_messages,
                 frame_count=state.current_chunk["frame_count"],
                 model=model_name,
@@ -1522,6 +1528,12 @@ class StreamingInferAdapter:
         )
         all_messages = list(state.current_chunk["messages"])
 
+        all_messages = self._truncate_internal_messages_for_context_budget(
+            all_messages,
+            static_content=static_content,
+            dynamic_content=dynamic_content,
+        )
+
         if prefix_content:
             for idx, message in enumerate(all_messages):
                 if message.get("role") != "user":
@@ -1540,6 +1552,65 @@ class StreamingInferAdapter:
                 break
 
         return all_messages, prefix_content
+
+    def _truncate_internal_messages_for_context_budget(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        static_content: str = "",
+        dynamic_content: str = "",
+    ) -> list[dict[str, Any]]:
+        budget = int(self.config.main_context_max_tokens or 0)
+        if budget <= 0 or not messages:
+            return messages
+
+        prefix_tokens = self._estimate_text_tokens(static_content) + self._estimate_text_tokens(dynamic_content)
+        estimated_tokens = prefix_tokens + sum(
+            self._estimate_internal_message_tokens(message) for message in messages
+        )
+        if estimated_tokens <= budget:
+            return messages
+
+        trimmed = list(messages)
+        removed = 0
+        while len(trimmed) > 1 and estimated_tokens > budget:
+            removed_message = trimmed.pop(0)
+            estimated_tokens -= self._estimate_internal_message_tokens(removed_message)
+            removed += 1
+
+        if removed:
+            LOGGER.warning(
+                "main-model context budget exceeded; dropped %d oldest live turn(s) "
+                "before inference (estimated_tokens=%d, budget=%d)",
+                removed,
+                max(estimated_tokens, 0),
+                budget,
+            )
+        return trimmed
+
+    def _estimate_internal_message_tokens(self, message: dict[str, Any]) -> int:
+        content = message.get("content")
+        if isinstance(content, str):
+            return self._estimate_text_tokens(content)
+        if not isinstance(content, list):
+            return 0
+
+        tokens = 0
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if item_type == "text":
+                tokens += self._estimate_text_tokens(str(item.get("text", "")))
+            elif item_type in {"image", "image_url"}:
+                tokens += max(1, int(self.config.image_context_token_estimate or 1))
+        return tokens
+
+    @staticmethod
+    def _estimate_text_tokens(text: str) -> int:
+        if not text:
+            return 0
+        return max(1, math.ceil(len(text) / 4))
 
     def _build_main_api_messages(self, state: SessionState) -> list[dict[str, Any]]:
         all_messages, _ = self._build_main_internal_messages(state)
