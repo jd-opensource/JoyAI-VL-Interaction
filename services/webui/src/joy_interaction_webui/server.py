@@ -69,6 +69,98 @@ ws_to_session = {}  # ws -> session_id
 session_peer_connections = defaultdict(set)  # session_id -> set of RTCPeerConnection
 
 
+def _build_ice_servers_config():
+    """Build ICE server list from environment variables.
+
+    Supports remote/SSH-tunnel deployments where the default Google STUN
+    servers are unreachable (internal network) and UDP cannot traverse the
+    tunnel. In that case a TURN-over-TCP server (e.g. coturn) should be used.
+
+    Environment variables:
+      - WEBRTC_STUN_URLS:  comma-separated STUN urls. Empty string disables STUN.
+                           Defaults to Google STUN if unset.
+      - WEBRTC_TURN_URLS:  comma-separated TURN urls
+                           (e.g. "turn:127.0.0.1:3478?transport=tcp").
+      - WEBRTC_TURN_USERNAME / WEBRTC_TURN_PASSWORD: TURN credentials.
+
+    Returns a list of dicts in the JSON shape expected by the browser
+    RTCPeerConnection (also consumed server-side to build RTCIceServer).
+    """
+    ice_servers = []
+
+    stun_env = os.environ.get("WEBRTC_STUN_URLS")
+    if stun_env is None:
+        # Default behaviour (unchanged) for direct/LAN deployments.
+        stun_urls = [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+        ]
+    else:
+        stun_urls = [u.strip() for u in stun_env.split(",") if u.strip()]
+    if stun_urls:
+        ice_servers.append({"urls": stun_urls})
+
+    turn_env = os.environ.get("WEBRTC_TURN_URLS", "").strip()
+    if turn_env:
+        turn_urls = [u.strip() for u in turn_env.split(",") if u.strip()]
+        turn_server: dict = {"urls": turn_urls}
+        turn_user = os.environ.get("WEBRTC_TURN_USERNAME", "").strip()
+        turn_pass = os.environ.get("WEBRTC_TURN_PASSWORD", "").strip()
+        if turn_user:
+            turn_server["username"] = turn_user
+        if turn_pass:
+            turn_server["credential"] = turn_pass
+        ice_servers.append(turn_server)
+
+    return ice_servers
+
+
+def _force_relay_enabled() -> bool:
+    """Whether to force iceTransportPolicy=relay (media must go through TURN).
+
+    Required for SSH-tunnel deployments so the browser never tries a direct
+    UDP path to the server's real IP (which is unreachable through the tunnel).
+    """
+    return os.environ.get("WEBRTC_FORCE_RELAY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _build_rtc_configuration():
+    """Build an aiortc RTCConfiguration from the env-driven ICE server list."""
+    ice_servers = _build_ice_servers_config()
+    rtc_ice_servers = []
+    for entry in ice_servers:
+        kwargs = {"urls": entry["urls"]}
+        if "username" in entry:
+            kwargs["username"] = entry["username"]
+        if "credential" in entry:
+            kwargs["credential"] = entry["credential"]
+        rtc_ice_servers.append(RTCIceServer(**kwargs))
+    return RTCConfiguration(iceServers=rtc_ice_servers)
+
+
+async def ice_config(request):
+    """Expose the ICE configuration so the browser uses the same servers.
+
+    Returns iceServers plus iceTransportPolicy so a single source of truth
+    (server env vars) controls both ends of the WebRTC connection.
+    """
+    del request
+    return web.Response(
+        content_type="application/json",
+        text=json.dumps(
+            {
+                "iceServers": _build_ice_servers_config(),
+                "iceTransportPolicy": "relay" if _force_relay_enabled() else "all",
+            }
+        ),
+    )
+
+
 def notify_session_json(session_id: str, payload: dict):
     """Send a JSON payload to WebSocket clients in this session."""
     handle_background_handoff_for_interaction(session_id, payload)
@@ -762,13 +854,10 @@ async def offer(request):
     background_service = session.get("background_service")
     session_callback = get_session_callback(session_id)
 
-    # Create RTCPeerConnection with STUN servers for Docker/NAT compatibility
-    config = RTCConfiguration(
-        iceServers=[
-            RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
-            RTCIceServer(urls=["stun:stun1.l.google.com:19302"]),
-        ]
-    )
+    # Create RTCPeerConnection with env-configurable ICE servers.
+    # For SSH-tunnel / internal-network deployments, set WEBRTC_TURN_URLS
+    # (TURN-over-TCP) and WEBRTC_FORCE_RELAY=1 so media traverses the tunnel.
+    config = _build_rtc_configuration()
     pc = RTCPeerConnection(configuration=config)
     pcs.add(pc)
     session_peer_connections[session_id].add(pc)
@@ -1137,6 +1226,7 @@ async def create_app(test_mode=False):
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/models", models)
+    app.router.add_get("/ice-config", ice_config)
     app.router.add_get("/detect-services", detect_services)
     app.router.add_get("/ws", websocket_handler)
     setup_asr_routes(app)
