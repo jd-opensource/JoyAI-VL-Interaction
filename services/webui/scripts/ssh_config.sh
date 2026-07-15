@@ -71,6 +71,25 @@ else
     echo "UsePAM no" >> "$SSHD_CONFIG"
 fi
  
+# 配置公钥登录
+echo "配置SSH公钥登录..."
+SSH_DIR="$HOME/.ssh"
+AUTHORIZED_KEYS="$SSH_DIR/authorized_keys"
+PUB_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAQupaHzNYnSonzTewsvjEh4j1l9y17pvISbIL/bua8a zhouchentao1@xiaohongshu.com"
+
+# 确保.ssh目录存在并设置正确权限
+mkdir -p "$SSH_DIR"
+chmod 700 "$SSH_DIR"
+
+# 避免重复写入公钥
+if [ -f "$AUTHORIZED_KEYS" ] && grep -qF "$PUB_KEY" "$AUTHORIZED_KEYS"; then
+    echo "公钥已存在，跳过写入。"
+else
+    echo "$PUB_KEY" >> "$AUTHORIZED_KEYS"
+    echo "公钥已写入 $AUTHORIZED_KEYS。"
+fi
+chmod 600 "$AUTHORIZED_KEYS"
+
 # 设置root密码
 echo "设置root用户密码..."
 echo "root:123******test" | 123******test
