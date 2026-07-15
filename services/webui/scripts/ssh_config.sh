@@ -7,10 +7,10 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
  
 # 检查sshd服务是否运行
-if pgrep -x "sshd" &>/dev/null; then
-    echo "sshd服务已经运行。无需重复配置。"
-    exit 0
-fi
+# if pgrep -x "sshd" &>/dev/null; then
+#     echo "sshd服务已经运行。无需重复配置。"
+#     exit 0
+# fi
  
 # 检查netstat命令是否存在
 if command -v netstat &>/dev/null; then
