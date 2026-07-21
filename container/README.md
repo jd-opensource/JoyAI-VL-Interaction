@@ -2,6 +2,8 @@
 
 One Docker Compose stack provides three mutually exclusive hardware profiles. Starting one profile stops the other two.
 
+> **Optimal inference configurations are now available:** the deployment profiles tuned for NVIDIA GeForce RTX 3090 and RTX 5090 have been completed and released. Use the `24GB` profile for RTX 3090 and the `regular` 32GB profile for RTX 5090.
+
 | Profile | Target GPUs | Main model | `MAX_MODEL_LEN` | Main GPU utilization | Memory policy |
 | --- | --- | --- | ---: | ---: | --- |
 | `regular` | 1 × 32GB main + 3 × 32GB / 3 APIs | BF16 preview | 67,174 | 0.95 | 5 mid-term / 2 long-term blocks |
