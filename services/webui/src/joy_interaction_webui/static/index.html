@@ -2756,6 +2756,7 @@ limitations under the License.
         #apiBaseUrl.applied,
         #apiKey.applied,
         #modelSelect.applied,
+        #systemPromptSelect.applied,
         #cameraSelect.applied,
         #rtspUrl.applied {
             animation: settingApplied 0.6s ease-out;
@@ -3638,6 +3639,13 @@ limitations under the License.
                             <option value="">Loading models...</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label>System Prompt</label>
+                        <select id="systemPromptSelect">
+                            <option value="DEFAULT_SYSTEM_PROMPT_EN" selected>Default (delegation)</option>
+                            <option value="DEFAULT_SYSTEM_PROMPT_NO_DELEGATION">No delegation</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -3935,6 +3943,7 @@ limitations under the License.
         const ttsEnabledToggle = document.getElementById('ttsEnabledToggle');
         const ttsSpeakingLine = document.getElementById('ttsSpeakingLine');
         const ttsSpeakingText = document.getElementById('ttsSpeakingText');
+        const systemPromptSelect = document.getElementById('systemPromptSelect');
         const backgroundEnabledToggle = document.getElementById('backgroundEnabledToggle');
         const backgroundFrameMultiplier = document.getElementById('backgroundFrameMultiplier');
         const backgroundMaxFrames = document.getElementById('backgroundMaxFrames');
@@ -3993,6 +4002,7 @@ limitations under the License.
         // Multi-session: one ID per page/tab; sent in WebSocket and /offer so this tab gets only its VLM output
         let sessionId = crypto.randomUUID ? crypto.randomUUID() : 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2);
         let isAnalysisRunning = false;
+        let isStreamStarting = false;
         let selectedCameraId = null;
         let videoDevices = [];
         let preferredCameraFacing = 'environment';
@@ -6363,6 +6373,44 @@ limitations under the License.
             renderVlmHistory({ animateLast: true });
         }
 
+        const FALLBACK_SYSTEM_PROMPT_OPTIONS = [
+            { key: 'DEFAULT_SYSTEM_PROMPT_EN', label: 'Default (delegation)' },
+            { key: 'DEFAULT_SYSTEM_PROMPT_NO_DELEGATION', label: 'No delegation' }
+        ];
+
+        function applySystemPromptOptions(options, selectedKey) {
+            if (!systemPromptSelect) return;
+            const resolvedOptions = Array.isArray(options) && options.length
+                ? options
+                : FALLBACK_SYSTEM_PROMPT_OPTIONS;
+            const key = selectedKey || 'DEFAULT_SYSTEM_PROMPT_EN';
+
+            systemPromptSelect.innerHTML = '';
+            resolvedOptions.forEach(optionData => {
+                const option = document.createElement('option');
+                option.value = optionData.key;
+                option.textContent = optionData.label || optionData.key;
+                if (optionData.description) {
+                    option.title = optionData.description;
+                }
+                systemPromptSelect.appendChild(option);
+            });
+
+            systemPromptSelect.value = resolvedOptions.some(optionData => optionData.key === key)
+                ? key
+                : 'DEFAULT_SYSTEM_PROMPT_EN';
+        }
+
+        function sendSystemPromptSelection() {
+            if (!systemPromptSelect || !websocket || websocket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            websocket.send(JSON.stringify({
+                type: 'update_system_prompt',
+                system_prompt_key: systemPromptSelect.value || 'DEFAULT_SYSTEM_PROMPT_EN'
+            }));
+        }
+
         function applyBackgroundConfig(config) {
             if (!config) return;
             backgroundConfig = config;
@@ -6754,6 +6802,19 @@ limitations under the License.
             });
         }
 
+        if (systemPromptSelect) {
+            systemPromptSelect.addEventListener('change', () => {
+                if (isAnalysisRunning || isStreamStarting) {
+                    return;
+                }
+                sendSystemPromptSelection();
+                systemPromptSelect.classList.add('applied');
+                setTimeout(() => {
+                    systemPromptSelect.classList.remove('applied');
+                }, 600);
+            });
+        }
+
         colorfulFocusToggle.addEventListener('change', (e) => {
             const enabled = e.target.checked;
             localStorage.setItem('colorfulFocus', enabled);
@@ -6944,6 +7005,11 @@ limitations under the License.
             processEvery.title = isAnalysisRunning ? '推理中不可修改，请先停止视频' : '';
             framesPerBatch.disabled = isAnalysisRunning;
             framesPerBatch.title = isAnalysisRunning ? '推理中不可修改，请先停止视频' : '';
+            if (systemPromptSelect) {
+                const systemPromptLocked = isAnalysisRunning || isStreamStarting;
+                systemPromptSelect.disabled = systemPromptLocked;
+                systemPromptSelect.title = systemPromptLocked ? '推理中不可修改，请先停止视频' : '';
+            }
         }
 
         function setVideoWaitingForStream(waiting) {
@@ -6985,6 +7051,7 @@ limitations under the License.
                 if (token !== streamStartToken || videoElement.srcObject !== stream) {
                     return;
                 }
+                isStreamStarting = false;
                 isAnalysisRunning = true;
                 updatePromptAvailability();
                 if (revealVideoAfterMetricsToken === token) {
@@ -8172,6 +8239,7 @@ limitations under the License.
                     if (data.background_model) {
                         applyBackgroundConfig(data.background_model);
                     }
+                    applySystemPromptOptions(data.system_prompt_options, data.system_prompt_key);
                     const reqCb = document.getElementById('debugShowRequestPayload');
                     const resCb = document.getElementById('debugShowResponsePayload');
                     const memCb = document.getElementById('debugShowMemoryState');
@@ -8192,6 +8260,11 @@ limitations under the License.
                 } else if (data.type === 'prompt_updated') {
                     // Prompt was updated on server (already handled in applyPrompt)
                     console.log('Prompt updated:', data.prompt);
+                } else if (data.type === 'system_prompt_updated') {
+                    if (systemPromptSelect && data.system_prompt_key) {
+                        systemPromptSelect.value = data.system_prompt_key;
+                    }
+                    console.log('System prompt updated:', data.system_prompt_key);
                 } else if (data.type === 'processing_updated') {
                     if (data.process_interval != null) processEvery.value = String(data.process_interval);
                     console.log('Processing interval updated:', data.process_interval, 's');
@@ -8290,6 +8363,7 @@ limitations under the License.
             streamStartToken += 1;
             const token = streamStartToken;
             isAnalysisRunning = false;
+            isStreamStarting = true;
             revealVideoAfterMetricsToken = null;
             cancelRevealVideoFallback();
             updatePromptAvailability();
@@ -8423,8 +8497,10 @@ limitations under the License.
 
                 if (!rtspUrl) {
                     alert('Please enter an RTSP URL');
+                    isStreamStarting = false;
                     setVideoWaitingForStream(false);
                     resetVideoButtons();
+                    updatePromptAvailability();
                     return;
                 }
 
@@ -8516,10 +8592,12 @@ limitations under the License.
 
             } catch (error) {
                 console.error('Error starting RTSP:', error);
+                isStreamStarting = false;
                 updateStatus(`Error: ${error.message}`, 'disconnected');
                 alert('Failed to connect to RTSP stream: ' + error.message);
                 setVideoWaitingForStream(false);
                 resetVideoButtons();
+                updatePromptAvailability();
                 if (peerConnection) {
                     peerConnection.close();
                     peerConnection = null;
@@ -8531,6 +8609,7 @@ limitations under the License.
         async function stop({ clearConversation = false } = {}) {
             streamStartToken += 1;
             isAnalysisRunning = false;
+            isStreamStarting = false;
             revealVideoAfterMetricsToken = null;
             cancelRevealVideoFallback();
             mobileVoiceMode = false;

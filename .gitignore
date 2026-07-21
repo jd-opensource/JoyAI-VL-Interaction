@@ -66,6 +66,10 @@ agent-workspace/
 *.tmp
 *.bak
 
+# Local launch scripts
+/services/scripts/run_4gpu.sh
+/services/webinfer/scripts/start_4gpu_models_adapter.sh
+
 # Local credentials and certificates
 .env
 .env.*

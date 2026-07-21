@@ -20,6 +20,17 @@ TTS_WARMUP_OUTPUT="${TTS_WARMUP_OUTPUT:-/tmp/joyvl_tts_warmup.pcm}"
 TTS_WARMUP_TIMEOUT="${TTS_WARMUP_TIMEOUT:-180}"
 TTS_WARMUP_HEALTH_ATTEMPTS="${TTS_WARMUP_HEALTH_ATTEMPTS:-120}"
 TTS_WARMUP_HEALTH_INTERVAL="${TTS_WARMUP_HEALTH_INTERVAL:-1}"
+TTS_ADAPTER_LOG_FILE=""
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  TTS_LOG_DIR="${TTS_LOG_DIR:-${SERVICE_DIR}/logs}"
+  mkdir -p "$TTS_LOG_DIR"
+  TTS_ADAPTER_LOG_FILE="${TTS_ADAPTER_LOG_FILE:-${TTS_LOG_DIR}/adapter_${TTS_ADAPTER_PORT}.log}"
+  exec > >(tee -a "$TTS_ADAPTER_LOG_FILE") 2>&1
+fi
+
+if [[ -n "${TTS_ADAPTER_LOG_FILE}" ]]; then
+  echo "TTS adapter log: $TTS_ADAPTER_LOG_FILE"
+fi
 
 if [ ! -d "$TTS_VENV_DIR" ]; then
   echo "TTS 虚拟环境不存在: $TTS_VENV_DIR" >&2
@@ -78,21 +89,21 @@ except Exception:
     raise SystemExit(1)
 PY
       then
-        echo "TTS warmup: adapter is healthy, warming full synthesis path..."
+        echo "TTS smoke: adapter is healthy, warming full synthesis path..."
         if joyvl-tts-adapter smoke \
           --url "$TTS_WARMUP_URL" \
           --text "$TTS_WARMUP_TEXT" \
           --output "$TTS_WARMUP_OUTPUT" \
           --timeout "$TTS_WARMUP_TIMEOUT"; then
-          echo "TTS warmup: completed, output=$TTS_WARMUP_OUTPUT"
+          echo "TTS smoke: completed, output=$TTS_WARMUP_OUTPUT"
         else
-          echo "TTS warmup: failed; adapter will keep running" >&2
+          echo "TTS smoke: failed; adapter will keep running" >&2
         fi
         exit 0
       fi
       sleep "$TTS_WARMUP_HEALTH_INTERVAL"
     done
-    echo "TTS warmup: skipped because adapter health did not become ready at $TTS_WARMUP_HEALTH_URL" >&2
+    echo "TTS smoke: skipped because adapter health did not become ready at $TTS_WARMUP_HEALTH_URL" >&2
   ) &
 fi
 

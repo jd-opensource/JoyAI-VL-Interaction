@@ -7,6 +7,13 @@ ACTION="${1:-help}"
 if [[ $# -gt 0 ]]; then
   shift
 fi
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  WEBINFER_RUN_LOG_DIR="${WEBINFER_RUN_LOG_DIR:-${SERVICE_DIR}/logs}"
+  mkdir -p "$WEBINFER_RUN_LOG_DIR"
+  WEBINFER_RUN_LOG_FILE="${WEBINFER_RUN_LOG_FILE:-${WEBINFER_RUN_LOG_DIR}/run_${ACTION}.log}"
+  exec > >(tee -a "$WEBINFER_RUN_LOG_FILE") 2>&1
+  echo "webinfer run log: $WEBINFER_RUN_LOG_FILE"
+fi
 
 # ==================== Python / environment ====================
 # Auto-use the shared install venv when available. Set VENV_ACTIVATE= to use the
@@ -102,6 +109,7 @@ run_all() {
 
   cleanup() {
     local status=$?
+    local pid
     trap - EXIT INT TERM
     if [[ ${#pids[@]} -gt 0 ]]; then
       echo "Stopping child services..."
@@ -110,7 +118,12 @@ run_all() {
     if [[ -n "${summary_pid}" ]]; then
       kill "${summary_pid}" 2>/dev/null || true
     fi
-    wait 2>/dev/null || true
+    for pid in "${pids[@]:-}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+    if [[ -n "${summary_pid}" ]]; then
+      wait "${summary_pid}" 2>/dev/null || true
+    fi
     exit "${status}"
   }
   trap cleanup EXIT INT TERM

@@ -4,7 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SERVICES_DIR="$(cd "${PROJECT_ROOT}/.." && pwd)"
+WEBUI_HOST="${WEBUI_HOST:-0.0.0.0}"
+WEBUI_PORT="${WEBUI_PORT:-8099}"
 cd "${PROJECT_ROOT}"
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  WEBUI_LOG_DIR="${WEBUI_LOG_DIR:-${PROJECT_ROOT}/logs}"
+  mkdir -p "${WEBUI_LOG_DIR}"
+  WEBUI_LOG_FILE="${WEBUI_LOG_FILE:-${WEBUI_LOG_DIR}/webui_${WEBUI_PORT}.log}"
+  exec > >(tee -a "${WEBUI_LOG_FILE}") 2>&1
+fi
 
 if [ -z "${VENV_ACTIVATE+x}" ]; then
   if [ -f "${SERVICES_DIR}/.venv/bin/activate" ]; then
@@ -29,11 +37,16 @@ if [ ! -f cert.pem ] || [ ! -f key.pem ]; then
   bash "${SCRIPT_DIR}/generate_cert.sh"
 fi
 
-PYTHONPATH="src${PYTHONPATH:+:$PYTHONPATH}" python -m joy_interaction_webui.server \
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  echo "WebUI log: ${WEBUI_LOG_FILE}"
+fi
+
+export PYTHONPATH="src${PYTHONPATH:+:$PYTHONPATH}"
+exec python -m joy_interaction_webui.server \
   --ssl-cert cert.pem \
   --ssl-key key.pem \
-  --host 0.0.0.0 \
-  --port 8099 \
+  --host "${WEBUI_HOST}" \
+  --port "${WEBUI_PORT}" \
   --model streaming-infer-adapter \
   --api-base http://127.0.0.1:8070/v1 \
   "$@"

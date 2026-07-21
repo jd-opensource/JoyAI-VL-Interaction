@@ -14,6 +14,17 @@ ASR_PORT="${ASR_PORT:-8993}"
 ASR_GPU="${ASR_GPU:-2}"
 ASR_TENSOR_PARALLEL_SIZE="${ASR_TENSOR_PARALLEL_SIZE:-1}"
 ASR_GPU_MEMORY_UTILIZATION="${ASR_GPU_MEMORY_UTILIZATION:-0.3}"
+ASR_MODEL_LOG_FILE=""
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  ASR_LOG_DIR="${ASR_LOG_DIR:-${SERVICE_DIR}/logs}"
+  mkdir -p "$ASR_LOG_DIR"
+  ASR_MODEL_LOG_FILE="${ASR_MODEL_LOG_FILE:-${ASR_LOG_DIR}/model_${ASR_PORT}.log}"
+  exec > >(tee -a "$ASR_MODEL_LOG_FILE") 2>&1
+fi
+
+if [[ -n "${ASR_MODEL_LOG_FILE}" ]]; then
+  echo "ASR model log: $ASR_MODEL_LOG_FILE"
+fi
 
 if [ ! -d "$ASR_VENV_DIR" ]; then
   echo "ASR 虚拟环境不存在: $ASR_VENV_DIR" >&2

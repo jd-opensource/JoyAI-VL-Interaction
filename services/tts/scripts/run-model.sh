@@ -15,6 +15,17 @@ TTS_PORT="${TTS_PORT:-8991}"
 TTS_GPU="${TTS_GPU:-2}"
 TTS_TENSOR_PARALLEL_SIZE="${TTS_TENSOR_PARALLEL_SIZE:-1}"
 TTS_GPU_MEMORY_UTILIZATION="${TTS_GPU_MEMORY_UTILIZATION:-}"
+TTS_MODEL_LOG_FILE=""
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  TTS_LOG_DIR="${TTS_LOG_DIR:-${SERVICE_DIR}/logs}"
+  mkdir -p "$TTS_LOG_DIR"
+  TTS_MODEL_LOG_FILE="${TTS_MODEL_LOG_FILE:-${TTS_LOG_DIR}/model_${TTS_PORT}.log}"
+  exec > >(tee -a "$TTS_MODEL_LOG_FILE") 2>&1
+fi
+
+if [[ -n "${TTS_MODEL_LOG_FILE}" ]]; then
+  echo "TTS model log: $TTS_MODEL_LOG_FILE"
+fi
 
 if [ ! -d "$TTS_VENV_DIR" ]; then
   echo "TTS 虚拟环境不存在: $TTS_VENV_DIR" >&2

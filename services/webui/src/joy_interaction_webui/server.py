@@ -40,7 +40,7 @@ from aiortc import (
 )
 from aiortc.contrib.media import MediaRelay
 
-from .vlm_service import VLMService
+from .vlm_service import SYSTEM_PROMPT_DEFAULT_KEY, VLMService
 from .video_processor import VideoProcessorTrack
 from .rtsp_track import RTSPVideoTrack
 from .asr import setup_asr_routes
@@ -125,6 +125,7 @@ def get_or_create_session(session_id: str):
                 api_key=cfg.get("api_key", "EMPTY"),
                 prompt=cfg.get("prompt") or None,
                 session_id=session_id,
+                system_prompt_key=cfg.get("system_prompt_key", SYSTEM_PROMPT_DEFAULT_KEY),
             ),
             "background_service": BackgroundModelService(
                 session_id=session_id,
@@ -488,6 +489,8 @@ async def websocket_handler(request):
                 "model": svc.model,
                 "api_base": svc.api_base,
                 "prompt": svc.prompt,
+                "system_prompt_key": svc.system_prompt_key,
+                "system_prompt_options": svc.system_prompt_options(),
                 "process_interval": _VPT.process_interval_seconds,
                 "frames_per_batch": _VPT.frames_per_batch,
                 "background_model": background_service.get_config()
@@ -515,6 +518,18 @@ async def websocket_handler(request):
                                 {
                                     "type": "prompt_updated",
                                     "prompt": new_prompt,
+                                }
+                            )
+
+                    elif data.get("type") == "update_system_prompt":
+                        if svc:
+                            system_prompt_key = svc.update_system_prompt_key(
+                                data.get("system_prompt_key")
+                            )
+                            await ws.send_json(
+                                {
+                                    "type": "system_prompt_updated",
+                                    "system_prompt_key": system_prompt_key,
                                 }
                             )
 
@@ -1384,6 +1399,7 @@ def main():
         "api_base": api_base,
         "api_key": api_key,
         "prompt": args.prompt,
+        "system_prompt_key": vlm_service.system_prompt_key,
     }
     sessions["default"] = {
         "vlm_service": vlm_service,

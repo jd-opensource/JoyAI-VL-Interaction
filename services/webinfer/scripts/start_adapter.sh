@@ -11,6 +11,13 @@ fi
 ADAPTER_HOST="${ADAPTER_HOST:-127.0.0.1}"
 ADAPTER_PORT="${ADAPTER_PORT:-8070}"
 ADAPTER_MODEL="${ADAPTER_MODEL:-streaming-infer-adapter}"
+ADAPTER_LOG_FILE=""
+if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
+  ADAPTER_LOG_DIR="${ADAPTER_LOG_DIR:-${SERVICE_DIR}/adapter_logs}"
+  mkdir -p "${ADAPTER_LOG_DIR}"
+  ADAPTER_LOG_FILE="${ADAPTER_LOG_FILE:-${ADAPTER_LOG_DIR}/adapter_${ADAPTER_PORT}.log}"
+  exec > >(tee -a "${ADAPTER_LOG_FILE}") 2>&1
+fi
 
 MAIN_API_BASE="${MAIN_API_BASE:-http://127.0.0.1:7060/v1}"
 MAIN_MODEL="${MAIN_MODEL:-JoyAI-VL-Interaction-Preview}"
@@ -45,8 +52,8 @@ MAIN_MAX_TOKENS="${MAIN_MAX_TOKENS:-256}"
 MAIN_TEMPERATURE="${MAIN_TEMPERATURE:-0.8}"
 MAIN_TOP_P="${MAIN_TOP_P:-0.9}"
 MAIN_TOP_K="${MAIN_TOP_K:-40}"
-MAIN_REPETITION_PENALTY="${MAIN_REPETITION_PENALTY:-1.1}"
-MAIN_PRESENCE_PENALTY="${MAIN_PRESENCE_PENALTY:-1.5}"
+MAIN_REPETITION_PENALTY="${MAIN_REPETITION_PENALTY:-1.05}"
+MAIN_PRESENCE_PENALTY="${MAIN_PRESENCE_PENALTY:-0.4}"
 SYSTEM_PROMPT_ARGS=()
 if [[ -n "${SYSTEM_PROMPT+x}" ]]; then
   SYSTEM_PROMPT_ARGS=(--system-prompt "${SYSTEM_PROMPT}")
@@ -88,6 +95,11 @@ echo "  Chunk:         ${CHUNK}"
 echo "  Compress N:    ${COMPRESS_EVERY_N_CHUNKS}"
 echo "  Async lead:    ${ASYNC_SUMMARY_LEAD_FRAMES}"
 echo "  Main sampling: max_tokens=${MAIN_MAX_TOKENS}, temp=${MAIN_TEMPERATURE}, top_p=${MAIN_TOP_P}, top_k=${MAIN_TOP_K}, rep_penalty=${MAIN_REPETITION_PENALTY}"
+if [[ -n "${ADAPTER_LOG_FILE}" ]]; then
+    echo "  Log:           ${ADAPTER_LOG_FILE}"
+else
+    echo "  Log:           disabled"
+fi
 echo "============================================================"
 
 "${PYTHON_BIN}" "${SERVICE_DIR}/live_adapter.py" \
