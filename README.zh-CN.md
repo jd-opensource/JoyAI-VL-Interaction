@@ -85,6 +85,8 @@ cd JoyAI-VL-Interaction
 
 然后在浏览器中打开 `https://127.0.0.1:8099`。
 
+> **LiveKit 部署：** 如需使用 LiveKit 并避免对外开放大量服务端口，可通过 `git switch livekit` 切换到 [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) 分支。请注意，该分支可能不会长期维护。
+
 👉 如需完整部署 ASR、TTS、后台 agent 以及更多配置细节，请参阅[入门指南](doc/getting_started.zh-CN.md)。
 
 🚑 如果遇到部署问题，请参阅[故障排查指南](doc/troubleshooting.zh-CN.md)。

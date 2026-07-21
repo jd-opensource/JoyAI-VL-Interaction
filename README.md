@@ -86,6 +86,8 @@ cd JoyAI-VL-Interaction
 
 Then open `https://127.0.0.1:8099` in your browser.
 
+> **LiveKit deployment:** To use LiveKit and avoid exposing a large number of service ports, switch to the [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) branch with `git switch livekit`. Note that this branch may not be maintained long term.
+
 👉 For the full setup (ASR, TTS, background agent) and configuration details, see the [Getting Started Guide](doc/getting_started.md).
 
 🚑 If you run into deployment issues, see the [Troubleshooting Guide](doc/troubleshooting.md).
