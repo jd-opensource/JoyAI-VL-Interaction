@@ -1,6 +1,6 @@
 # JoyVL 安装兼容性说明
 
-> 原文档: [README.md](./README.md)
+> 原文档: [README.md](README.md)
 
 这个 `install` 目录用于将核心 WebUI 安装、可选服务适配器和较重的模型运行时环境分开管理。`install/` 不再提供服务启动入口；启动脚本位于 `services/` 下，各组件的服务级脚本位于其 `scripts/` 目录中。
 

@@ -8,11 +8,12 @@ import sys
 
 BASE_MODULES = [
     "aiohttp",
-    "aiortc",
     "av",
     "cv2",
     "httpx",
     "joy_interaction_webui.server",
+    "livekit.api",
+    "livekit.rtc",
     "numpy",
     "openai",
     "PIL",

@@ -1,7 +1,5 @@
 # JoyAI-VL-Interaction Usage
 
-> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
-
 Dataset: https://huggingface.co/datasets/jdopensource/JoyAI-VL-Interaction
 
 ### 1. Download Annotations
@@ -31,7 +29,6 @@ Use the `source` field to locate the original video, then fill `video_path` with
   }
 ]
 ```
-
 - `question`: user prompt list. `content` is the prompt text, and `time` is the timestamp in seconds when the prompt is issued.
 - `response`: ground-truth response list. `content` is the expected answer, and `time` is the timestamp in seconds when the answer or event should occur.
 

@@ -110,26 +110,6 @@ Choose this when you observe something worth reporting or a significant state ch
 **Delegate** — when a question is too hard or error-prone to answer reliably yourself, speak a brief note that you're delegating, then hand the question to the background solver:
 </response> Brief note that you're delegating. </delegation> <the question>""".strip()
 
-DEFAULT_SYSTEM_PROMPT_NO_DELEGATION = """You are a real-time video streaming assistant observing a continuous camera feed frame by frame. The last frame represents the current moment.
-## Action Format
-At every inference step you MUST choose exactly one of the following two actions:
-**Stay silent** — output ONLY:
-</silence>
-Choose this when nothing noteworthy has changed in the scene, no user query is pending, or there is nothing useful to say.
-**Speak** — output the token followed by a concise reply:
-</response> Your reply here.
-Choose this when you observe something worth reporting or a significant state change, or when you can answer a user question based on available evidence.
-
-## Important
-There is NO delegation action. NEVER output </delegation> or hand off questions to any background solver.""".strip()
-
-SYSTEM_PROMPT_DEFAULT_KEY = "DEFAULT_SYSTEM_PROMPT_EN"
-SYSTEM_PROMPT_NO_DELEGATION_KEY = "DEFAULT_SYSTEM_PROMPT_NO_DELEGATION"
-SYSTEM_PROMPT_OPTIONS = {
-    SYSTEM_PROMPT_DEFAULT_KEY: DEFAULT_SYSTEM_PROMPT_EN,
-    SYSTEM_PROMPT_NO_DELEGATION_KEY: DEFAULT_SYSTEM_PROMPT_NO_DELEGATION,
-}
-
 
 
 
@@ -1083,10 +1063,6 @@ class StreamingInferAdapter:
         messages = payload.get("messages") or []
         if not isinstance(messages, list):
             raise web.HTTPBadRequest(text="messages must be a list")
-        header_system_prompt_key = request.headers.get("x-system-prompt-key", "").strip()
-        if header_system_prompt_key and not payload.get("system_prompt_key"):
-            payload = dict(payload)
-            payload["system_prompt_key"] = header_system_prompt_key
 
         image_refs = _extract_all_image_refs(messages, request, payload)
         if not image_refs:
@@ -1247,7 +1223,7 @@ class StreamingInferAdapter:
             internal_messages, prefix_content = self._build_main_internal_messages(state)
             api_messages = self._build_cached_api_messages(state, internal_messages)
             generation_kwargs = self._main_generation_kwargs(payload)
-            http_messages = self._build_main_http_messages(api_messages, payload)
+            http_messages = self._build_main_http_messages(api_messages)
             turn_model_input_record = build_model_input_record(
                 chunk_index=state.chunk_index,
                 messages=http_messages,
@@ -1589,22 +1565,12 @@ class StreamingInferAdapter:
     def _build_main_http_messages(
         self,
         api_messages: list[dict[str, Any]],
-        payload: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         messages = list(api_messages)
-        system_prompt = self._resolve_system_prompt(payload)
+        system_prompt = self.config.system_prompt
         if system_prompt:
             messages = [{"role": "system", "content": system_prompt}] + messages
         return messages
-
-    def _resolve_system_prompt(self, payload: Optional[dict[str, Any]] = None) -> str:
-        key = str((payload or {}).get("system_prompt_key") or "").strip()
-        if key:
-            prompt = SYSTEM_PROMPT_OPTIONS.get(key)
-            if prompt is not None:
-                return prompt
-            LOGGER.warning("Ignoring unknown system_prompt_key=%r", key)
-        return self.config.system_prompt
 
     async def _call_main_model(
         self,
@@ -1620,10 +1586,7 @@ class StreamingInferAdapter:
         client = client or self.main_client
         model_name = model_name or self.config.main_model
         generation_kwargs = generation_kwargs or self._main_generation_kwargs(inbound_payload)
-        api_messages = http_messages or self._build_main_http_messages(
-            api_messages,
-            inbound_payload,
-        )
+        api_messages = http_messages or self._build_main_http_messages(api_messages)
         response = await client.chat.completions.create(
             model=model_name,
             messages=api_messages,

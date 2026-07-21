@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 MODEL_BASE="${MODEL_BASE:-/tmp/models}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-131072}"
 MAIN_GPU="${MAIN_GPU:-0}"
@@ -12,13 +11,6 @@ MODEL_PATH="${MODEL_PATH:-${MODEL_BASE}/${SERVED_MODEL_NAME}}"
 TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
 DATA_PARALLEL_SIZE="${DATA_PARALLEL_SIZE:-1}"
 DATA_PARALLEL_SIZE_LOCAL="${DATA_PARALLEL_SIZE_LOCAL:-${DATA_PARALLEL_SIZE}}"
-if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
-  MAIN_AGGREGATE_LOG_DIR="${MAIN_AGGREGATE_LOG_DIR:-${SERVICE_DIR}/main_vllm_logs}"
-  mkdir -p "$MAIN_AGGREGATE_LOG_DIR"
-  MAIN_AGGREGATE_LOG_FILE="${MAIN_AGGREGATE_LOG_FILE:-${MAIN_AGGREGATE_LOG_DIR}/start_all_models.log}"
-  exec > >(tee -a "$MAIN_AGGREGATE_LOG_FILE") 2>&1
-  echo "Main model aggregate log: $MAIN_AGGREGATE_LOG_FILE"
-fi
 
 declare -A MODELS
 MODELS=(
@@ -28,14 +20,11 @@ MODELS=(
 PIDS=()
 
 cleanup() {
-  local pid
   echo "Stopping all model servers..."
   for pid in "${PIDS[@]}"; do
     kill "$pid" 2>/dev/null || true
   done
-  for pid in "${PIDS[@]:-}"; do
-    wait "$pid" 2>/dev/null || true
-  done
+  wait
   echo "All servers stopped."
 }
 trap cleanup EXIT INT TERM
@@ -69,6 +58,4 @@ echo "All ${#MODELS[@]} model servers launched. PIDs: ${PIDS[*]}"
 echo "Press Ctrl+C to stop all."
 echo "============================================================"
 
-for pid in "${PIDS[@]:-}"; do
-  wait "$pid"
-done
+wait

@@ -4,15 +4,159 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SERVICES_DIR="$(cd "${PROJECT_ROOT}/.." && pwd)"
-WEBUI_HOST="${WEBUI_HOST:-0.0.0.0}"
-WEBUI_PORT="${WEBUI_PORT:-8099}"
 cd "${PROJECT_ROOT}"
-if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
-  WEBUI_LOG_DIR="${WEBUI_LOG_DIR:-${PROJECT_ROOT}/logs}"
-  mkdir -p "${WEBUI_LOG_DIR}"
-  WEBUI_LOG_FILE="${WEBUI_LOG_FILE:-${WEBUI_LOG_DIR}/webui_${WEBUI_PORT}.log}"
-  exec > >(tee -a "${WEBUI_LOG_FILE}") 2>&1
-fi
+
+LIVEKIT_VERSION="${LIVEKIT_VERSION:-1.13.2}"
+LIVEKIT_SIGNAL_PORT="${LIVEKIT_SIGNAL_PORT:-8298}"
+LIVEKIT_UDP_PORT="${LIVEKIT_UDP_PORT:-8299}"
+LIVEKIT_API_KEY="${LIVEKIT_API_KEY:-joyvl}"
+LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-joyvl-secret-123456789012345678901234}"
+LIVEKIT_DIR="${LIVEKIT_DIR:-${PROJECT_ROOT}/.livekit}"
+LIVEKIT_BIN="${LIVEKIT_DIR}/livekit-server"
+LIVEKIT_CONFIG="${LIVEKIT_DIR}/livekit.yaml"
+LIVEKIT_LOG="${LIVEKIT_DIR}/livekit.log"
+
+detect_node_ip() {
+  local node_ip probe_ip
+
+  if [ -n "${LIVEKIT_NODE_IP:-}" ]; then
+    echo "${LIVEKIT_NODE_IP}"
+    return
+  fi
+
+  probe_ip="${LIVEKIT_NODE_IP_PROBE:-1.1.1.1}"
+  if command -v ip >/dev/null 2>&1; then
+    node_ip="$(
+      ip -o -4 route get "${probe_ip}" 2>/dev/null \
+        | awk '{for (i = 1; i < NF; i++) if ($i == "src") {print $(i + 1); exit}}'
+    )"
+    if [ -n "${node_ip}" ]; then
+      echo "${node_ip}"
+      return
+    fi
+  fi
+
+  hostname -I 2>/dev/null \
+    | tr ' ' '\n' \
+    | awk '$1 !~ /^127\./ && $1 !~ /^169\.254\./ {print; exit}'
+}
+
+download_livekit() {
+  local os arch asset archive checksum_url version_no_v url
+
+  mkdir -p "${LIVEKIT_DIR}"
+  if [ -x "${LIVEKIT_BIN}" ]; then
+    return
+  fi
+
+  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  arch="$(uname -m)"
+  version_no_v="${LIVEKIT_VERSION#v}"
+
+  if [ "${os}" != "linux" ]; then
+    echo "Unsupported LiveKit download OS: ${os}" >&2
+    exit 1
+  fi
+
+  case "${arch}" in
+    x86_64|amd64)
+      arch="amd64"
+      ;;
+    aarch64|arm64)
+      arch="arm64"
+      ;;
+    *)
+      echo "Unsupported LiveKit download architecture: ${arch}" >&2
+      exit 1
+      ;;
+  esac
+
+  asset="livekit_${version_no_v}_linux_${arch}.tar.gz"
+  archive="${LIVEKIT_DIR}/${asset}"
+  url="https://github.com/livekit/livekit/releases/download/v${version_no_v}/${asset}"
+  checksum_url="https://github.com/livekit/livekit/releases/download/v${version_no_v}/checksums.txt"
+
+  echo "Downloading LiveKit server ${LIVEKIT_VERSION} (${arch})..."
+  curl -fL --retry 3 --retry-delay 2 --retry-all-errors "${url}" -o "${archive}"
+  curl -fL --retry 3 --retry-delay 2 --retry-all-errors "${checksum_url}" -o "${LIVEKIT_DIR}/checksums.txt"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "${LIVEKIT_DIR}" && grep " ${asset}$" checksums.txt | sha256sum -c -)
+  else
+    echo "sha256sum not found; cannot verify LiveKit download" >&2
+    exit 1
+  fi
+
+  tar -xzf "${archive}" -C "${LIVEKIT_DIR}" livekit-server
+  chmod +x "${LIVEKIT_BIN}"
+}
+
+write_livekit_config() {
+  local node_ip
+
+  node_ip="$(detect_node_ip)"
+  if [ -z "${node_ip}" ]; then
+    echo "Could not detect LiveKit node IP; set LIVEKIT_NODE_IP." >&2
+    exit 1
+  fi
+
+  mkdir -p "${LIVEKIT_DIR}"
+  cat >"${LIVEKIT_CONFIG}" <<EOF
+port: ${LIVEKIT_SIGNAL_PORT}
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  udp_port: ${LIVEKIT_UDP_PORT}
+  tcp_port: 0
+  use_external_ip: false
+  node_ip: ${node_ip}
+  allow_tcp_fallback: false
+keys:
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+logging:
+  level: info
+EOF
+}
+
+start_livekit() {
+  local node_ip
+
+  download_livekit
+  write_livekit_config
+  node_ip="$(detect_node_ip)"
+
+  if command -v lsof >/dev/null 2>&1 && lsof -tiTCP:"${LIVEKIT_SIGNAL_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "LiveKit signaling already listening on 127.0.0.1:${LIVEKIT_SIGNAL_PORT}"
+    return
+  fi
+
+  echo "Starting LiveKit server on 127.0.0.1:${LIVEKIT_SIGNAL_PORT}, UDP ${LIVEKIT_UDP_PORT}, node IP ${node_ip}..."
+  LIVEKIT_API_KEY="${LIVEKIT_API_KEY}" LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET}" \
+    "${LIVEKIT_BIN}" --config "${LIVEKIT_CONFIG}" --node-ip "${node_ip}" >"${LIVEKIT_LOG}" 2>&1 &
+  LIVEKIT_PID="$!"
+
+  for _ in $(seq 1 30); do
+    if ! kill -0 "${LIVEKIT_PID}" 2>/dev/null; then
+      echo "LiveKit server exited early. Log: ${LIVEKIT_LOG}" >&2
+      tail -50 "${LIVEKIT_LOG}" >&2 || true
+      exit 1
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+      if lsof -tiTCP:"${LIVEKIT_SIGNAL_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+        return
+      fi
+    else
+      if (: >"/dev/tcp/127.0.0.1/${LIVEKIT_SIGNAL_PORT}") >/dev/null 2>&1; then
+        return
+      fi
+    fi
+    sleep 1
+  done
+
+  echo "Timed out waiting for LiveKit server. Log: ${LIVEKIT_LOG}" >&2
+  tail -50 "${LIVEKIT_LOG}" >&2 || true
+  exit 1
+}
 
 if [ -z "${VENV_ACTIVATE+x}" ]; then
   if [ -f "${SERVICES_DIR}/.venv/bin/activate" ]; then
@@ -37,16 +181,16 @@ if [ ! -f cert.pem ] || [ ! -f key.pem ]; then
   bash "${SCRIPT_DIR}/generate_cert.sh"
 fi
 
-if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
-  echo "WebUI log: ${WEBUI_LOG_FILE}"
-fi
+start_livekit
 
-export PYTHONPATH="src${PYTHONPATH:+:$PYTHONPATH}"
-exec python -m joy_interaction_webui.server \
+export LIVEKIT_INTERNAL_URL="${LIVEKIT_INTERNAL_URL:-ws://127.0.0.1:${LIVEKIT_SIGNAL_PORT}}"
+export LIVEKIT_API_KEY LIVEKIT_API_SECRET
+
+PYTHONPATH="src${PYTHONPATH:+:$PYTHONPATH}" python -m joy_interaction_webui.server \
   --ssl-cert cert.pem \
   --ssl-key key.pem \
-  --host "${WEBUI_HOST}" \
-  --port "${WEBUI_PORT}" \
+  --host 0.0.0.0 \
+  --port 8199 \
   --model streaming-infer-adapter \
   --api-base http://127.0.0.1:8070/v1 \
   "$@"

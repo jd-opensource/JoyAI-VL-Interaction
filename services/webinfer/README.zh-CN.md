@@ -1,6 +1,6 @@
 # web_infer 概览
 
-> 原文档: [README.md](./README.md)
+> 原文档: [README.md](README.md)
 
 `web_infer` 是 StreamingHarness 的实时视频推理服务层。它暴露 OpenAI 兼容 HTTP API。它自身不加载模型，而是将请求转发给本地 vLLM OpenAI API 服务；同时，适配器维护视频帧、chunk、用户问题、中间摘要和长期记忆。
 

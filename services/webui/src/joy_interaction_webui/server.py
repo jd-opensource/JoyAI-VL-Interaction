@@ -14,8 +14,10 @@
 # limitations under the License.
 
 """
-WebRTC Joy VL Interaction Server
-Main server that handles WebRTC connections and serves the web interface
+LiveKit Joy VL Interaction Server.
+
+Main server that serves the web interface, issues LiveKit tokens, and consumes
+video tracks for VLM analysis.
 """
 
 import asyncio
@@ -32,15 +34,10 @@ from collections import defaultdict
 
 import aiohttp
 from aiohttp import web
-from aiortc import (
-    RTCPeerConnection,
-    RTCSessionDescription,
-    RTCConfiguration,
-    RTCIceServer,
-)
-from aiortc.contrib.media import MediaRelay
+from livekit import api as livekit_api
+from livekit import rtc as livekit_rtc
 
-from .vlm_service import SYSTEM_PROMPT_DEFAULT_KEY, VLMService
+from .vlm_service import VLMService
 from .video_processor import VideoProcessorTrack
 from .rtsp_track import RTSPVideoTrack
 from .asr import setup_asr_routes
@@ -55,18 +52,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global objects
-relay = MediaRelay()
-pcs = set()
 vlm_service = None  # Kept for backwards compat; default session uses sessions["default"]
 websockets = set()  # Track active WebSocket connections (all)
 rtsp_tracks = {}  # Track active RTSP streams {session_id: (rtsp_track, processor_track)}
+livekit_workers = {}  # session_id -> LiveKitSessionWorker
 
 # Multi-session state
 default_vlm_config = {}  # Set at startup; used to create new sessions
 sessions = {}  # session_id -> {"vlm_service": VLMService}
 session_websockets = defaultdict(set)  # session_id -> set of ws
 ws_to_session = {}  # ws -> session_id
-session_peer_connections = defaultdict(set)  # session_id -> set of RTCPeerConnection
+LIVEKIT_INTERNAL_URL = os.environ.get("LIVEKIT_INTERNAL_URL", "ws://127.0.0.1:8298")
+LIVEKIT_PUBLIC_PATH = os.environ.get("LIVEKIT_PUBLIC_PATH", "/livekit")
+LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "joyvl")
+LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "joyvl-secret-123456789012345678901234")
 
 
 def notify_session_json(session_id: str, payload: dict):
@@ -125,7 +124,6 @@ def get_or_create_session(session_id: str):
                 api_key=cfg.get("api_key", "EMPTY"),
                 prompt=cfg.get("prompt") or None,
                 session_id=session_id,
-                system_prompt_key=cfg.get("system_prompt_key", SYSTEM_PROMPT_DEFAULT_KEY),
             ),
             "background_service": BackgroundModelService(
                 session_id=session_id,
@@ -213,14 +211,8 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
     if session_id in rtsp_tracks:
         await _stop_rtsp_session(session_id)
 
-    pcs_for_session = list(session_peer_connections.pop(session_id, set()))
-    for pc in pcs_for_session:
-        try:
-            await pc.close()
-        except Exception as e:
-            logger.warning("[%s] Error closing peer connection: %s", session_id, e)
-        finally:
-            pcs.discard(pc)
+    if session_id in livekit_workers:
+        await stop_livekit_worker(session_id)
 
     session = sessions.pop(session_id, None)
     cancelled = 0
@@ -237,11 +229,10 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
         await bg_svc.close(cancel_requests=False)
 
     logger.info(
-        "[%s] Session cleanup complete: removed=%s, websockets=%s, peer_connections=%s, cancelled_vlm_tasks=%s, cancelled_background_tasks=%s",
+        "[%s] Session cleanup complete: removed=%s, websockets=%s, cancelled_vlm_tasks=%s, cancelled_background_tasks=%s",
         session_id,
         bool(session),
         len(session_sockets),
-        len(pcs_for_session),
         cancelled,
         cancelled_background,
     )
@@ -249,7 +240,6 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
         "session_id": session_id,
         "removed": bool(session),
         "websockets_closed": len(session_sockets),
-        "peer_connections_closed": len(pcs_for_session),
         "cancelled_vlm_tasks": cancelled,
         "cancelled_background_tasks": cancelled_background,
     }
@@ -456,7 +446,7 @@ async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    # Session ID from query or generate new (client should send same id in /offer)
+    # Session ID from query or generate new.
     session_id = request.query.get("session_id", "").strip() or str(uuid.uuid4())
     ws_to_session[ws] = session_id
     session_websockets[session_id].add(ws)
@@ -489,8 +479,6 @@ async def websocket_handler(request):
                 "model": svc.model,
                 "api_base": svc.api_base,
                 "prompt": svc.prompt,
-                "system_prompt_key": svc.system_prompt_key,
-                "system_prompt_options": svc.system_prompt_options(),
                 "process_interval": _VPT.process_interval_seconds,
                 "frames_per_batch": _VPT.frames_per_batch,
                 "background_model": background_service.get_config()
@@ -518,18 +506,6 @@ async def websocket_handler(request):
                                 {
                                     "type": "prompt_updated",
                                     "prompt": new_prompt,
-                                }
-                            )
-
-                    elif data.get("type") == "update_system_prompt":
-                        if svc:
-                            system_prompt_key = svc.update_system_prompt_key(
-                                data.get("system_prompt_key")
-                            )
-                            await ws.send_json(
-                                {
-                                    "type": "system_prompt_updated",
-                                    "system_prompt_key": system_prompt_key,
                                 }
                             )
 
@@ -765,125 +741,270 @@ def broadcast_text_update(text: str, metrics: dict):
     websockets.difference_update(dead_websockets)
 
 
-async def offer(request):
-    """Handle WebRTC offer from client (supports both webcam and RTSP). Uses session_id for per-session VLM."""
-    params = await request.json()
-    offer_sdp = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-    rtsp_url = params.get("rtsp_url")  # Optional RTSP URL for IP camera mode
-    session_id = params.get("session_id", "default")
+def _livekit_room_name(session_id: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in session_id)
+    return f"joyvl-{safe or 'default'}"
 
-    session = get_or_create_session(session_id)
-    session_vlm = session["vlm_service"]
-    background_service = session.get("background_service")
-    session_callback = get_session_callback(session_id)
 
-    # Create RTCPeerConnection with STUN servers for Docker/NAT compatibility
-    config = RTCConfiguration(
-        iceServers=[
-            RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
-            RTCIceServer(urls=["stun:stun1.l.google.com:19302"]),
-        ]
+def _livekit_token(identity: str, room_name: str, *, can_publish: bool, can_subscribe: bool) -> str:
+    grants = livekit_api.VideoGrants(
+        room_join=True,
+        room=room_name,
+        can_publish=can_publish,
+        can_subscribe=can_subscribe,
+        can_publish_data=True,
     )
-    pc = RTCPeerConnection(configuration=config)
-    pcs.add(pc)
-    session_peer_connections[session_id].add(pc)
+    return (
+        livekit_api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+        .with_identity(identity)
+        .with_name(identity)
+        .with_grants(grants)
+        .to_jwt()
+    )
 
-    # Store RTSP track for cleanup
-    rtsp_cleanup_track = None
 
-    @pc.on("connectionstatechange")
-    async def on_connectionstatechange():
-        logger.info(f"Connection state: {pc.connectionState}")
-        if pc.connectionState in ["failed", "closed"]:
-            # Clean up RTSP track if exists
-            if rtsp_cleanup_track:
-                rtsp_cleanup_track.stop()
-                logger.info("RTSP track stopped on connection close")
-            await pc.close()
-            pcs.discard(pc)
-            session_pcs = session_peer_connections.get(session_id)
-            if session_pcs is not None:
-                session_pcs.discard(pc)
-                if not session_pcs:
-                    session_peer_connections.pop(session_id, None)
+class LiveKitSessionWorker:
+    """Server-side LiveKit participant that consumes browser camera video."""
 
-    @pc.on("iceconnectionstatechange")
-    async def on_iceconnectionstatechange():
-        logger.info(f"ICE connection state: {pc.iceConnectionState}")
-        if pc.iceConnectionState == "failed":
-            logger.error("ICE connection failed - check firewall/NAT settings")
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.room_name = _livekit_room_name(session_id)
+        self.room = livekit_rtc.Room()
+        self._closed = asyncio.Event()
+        self._tasks = set()
+        self._streams = set()
 
-    @pc.on("icegatheringstatechange")
-    async def on_icegatheringstatechange():
-        logger.info(f"ICE gathering state: {pc.iceGatheringState}")
+    async def start(self) -> None:
+        token = _livekit_token(
+            f"server-{self.session_id}",
+            self.room_name,
+            can_publish=False,
+            can_subscribe=True,
+        )
 
-    # If RTSP URL provided, create RTSP track instead of waiting for browser track
-    if rtsp_url:
-        logger.info(f"[{session_id}] Creating RTSP track for: {rtsp_url}")
+        @self.room.on("track_subscribed")
+        def on_track_subscribed(track, publication, participant):
+            if track.kind != livekit_rtc.TrackKind.KIND_VIDEO:
+                return
+            logger.info(
+                "[%s] LiveKit video track subscribed: participant=%s track=%s",
+                self.session_id,
+                participant.identity,
+                publication.sid,
+            )
+            task = asyncio.create_task(self._consume_track(track))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
+        @self.room.on("disconnected")
+        def on_disconnected(reason):
+            logger.info("[%s] LiveKit worker disconnected: %s", self.session_id, reason)
+            self._closed.set()
+
+        await self.room.connect(
+            LIVEKIT_INTERNAL_URL,
+            token,
+            livekit_rtc.RoomOptions(auto_subscribe=True),
+        )
+        logger.info("[%s] LiveKit worker connected to room %s", self.session_id, self.room_name)
+
+    async def _consume_track(self, track) -> None:
+        session = get_or_create_session(self.session_id)
+        processor = VideoProcessorTrack(
+            None,
+            session["vlm_service"],
+            text_callback=get_session_callback(self.session_id),
+            background_service=session.get("background_service"),
+        )
+        stream = livekit_rtc.VideoStream.from_track(
+            track=track,
+            format=livekit_rtc.VideoBufferType.RGB24,
+            capacity=1,
+        )
+        self._streams.add(stream)
         try:
-            rtsp_track = RTSPVideoTrack(rtsp_url)
-            rtsp_cleanup_track = rtsp_track  # Store for cleanup
+            async for frame_event in stream:
+                if self._closed.is_set():
+                    break
+                await processor.process_livekit_frame(frame_event)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[%s] Error consuming LiveKit video track", self.session_id)
+        finally:
+            processor.stop()
+            self._streams.discard(stream)
+            try:
+                await stream.aclose()
+            except Exception:
+                logger.debug("[%s] Error closing LiveKit video stream", self.session_id, exc_info=True)
 
-            # Wait for initial connection to get stream info
-            await asyncio.sleep(0.5)
+    async def close(self) -> None:
+        self._closed.set()
+        for task in list(self._tasks):
+            task.cancel()
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+        for stream in list(self._streams):
+            try:
+                await stream.aclose()
+            except Exception:
+                pass
+        try:
+            await self.room.disconnect()
+        except Exception:
+            logger.debug("[%s] Error disconnecting LiveKit room", self.session_id, exc_info=True)
 
-            # Wrap RTSP track with relay first (same pattern as webcam)
-            relayed_rtsp = relay.subscribe(rtsp_track)
 
-            processor_track = VideoProcessorTrack(
-                relayed_rtsp,
-                session_vlm,
-                text_callback=session_callback,
-                background_service=background_service,
-            )
+async def ensure_livekit_worker(session_id: str) -> LiveKitSessionWorker:
+    worker = livekit_workers.get(session_id)
+    if worker is not None:
+        return worker
+    worker = LiveKitSessionWorker(session_id)
+    await worker.start()
+    livekit_workers[session_id] = worker
+    return worker
 
-            # Add processor directly to peer connection
-            pc.addTrack(processor_track)
-            logger.info("Added RTSP processor track to peer connection")
 
-        except Exception as e:
-            logger.error(f"Failed to create RTSP track: {e}")
-            return web.Response(
-                status=500,
-                content_type="application/json",
-                text=json.dumps({"error": f"Failed to connect to RTSP stream: {str(e)}"}),
-            )
-    else:
-        # Webcam mode: wait for browser to send track
-        @pc.on("track")
-        def on_track(track):
-            logger.info(f"Received track: {track.kind}")
+async def stop_livekit_worker(session_id: str) -> None:
+    worker = livekit_workers.pop(session_id, None)
+    if worker is not None:
+        await worker.close()
 
-            if track.kind == "video":
-                # Create processor track with this session's VLM and session-scoped callback
-                processor_track = VideoProcessorTrack(
-                    relay.subscribe(track),
-                    session_vlm,
-                    text_callback=session_callback,
-                    background_service=background_service,
-                )
 
-                # Add processed track back to connection
-                pc.addTrack(processor_track)
-                logger.info("Added processed video track back to peer connection")
+async def livekit_token(request):
+    """Issue a LiveKit token for the browser participant and start the server worker."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
 
-            @track.on("ended")
-            async def on_ended():
-                logger.info(f"Track {track.kind} ended")
+    session_id = str(data.get("session_id") or request.query.get("session_id") or "default")
+    session_id = session_id.strip() or "default"
+    get_or_create_session(session_id)
 
-    # Handle offer
-    await pc.setRemoteDescription(offer_sdp)
+    try:
+        await ensure_livekit_worker(session_id)
+    except Exception as e:
+        logger.error("[%s] Failed to start LiveKit worker: %s", session_id, e, exc_info=True)
+        return web.Response(
+            status=503,
+            content_type="application/json",
+            text=json.dumps({"error": f"LiveKit worker unavailable: {e}"}),
+        )
 
-    # Create answer - this must happen after tracks are added
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-
-    logger.info(f"Created answer with {len(pc.getTransceivers())} transceivers")
-
+    room_name = _livekit_room_name(session_id)
+    token = _livekit_token(
+        f"browser-{session_id}",
+        room_name,
+        can_publish=True,
+        can_subscribe=False,
+    )
+    scheme = "wss" if request.scheme == "https" else "ws"
+    public_url = f"{scheme}://{request.host}{LIVEKIT_PUBLIC_PATH}"
     return web.Response(
         content_type="application/json",
-        text=json.dumps({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}),
+        text=json.dumps(
+            {
+                "url": public_url,
+                "token": token,
+                "room": room_name,
+                "session_id": session_id,
+            }
+        ),
     )
+
+
+def _livekit_proxy_url(request) -> str:
+    suffix = request.match_info.get("tail", "")
+    path = f"/{suffix}" if suffix else "/"
+    query = request.rel_url.query_string
+    url = f"http://127.0.0.1:8298{path}"
+    if query:
+        url += f"?{query}"
+    return url
+
+
+async def livekit_proxy(request):
+    """Proxy LiveKit HTTP and WebSocket signaling through the WebUI port."""
+    target_url = _livekit_proxy_url(request)
+    if request.headers.get("Upgrade", "").lower() == "websocket":
+        ws_client = web.WebSocketResponse()
+        await ws_client.prepare(request)
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower()
+            not in {
+                "host",
+                "upgrade",
+                "connection",
+                "sec-websocket-key",
+                "sec-websocket-version",
+                "sec-websocket-extensions",
+                "sec-websocket-protocol",
+            }
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(target_url, headers=headers) as ws_server:
+                async def pump_client_to_server():
+                    try:
+                        async for msg in ws_client:
+                            if msg.type == web.WSMsgType.TEXT:
+                                await ws_server.send_str(msg.data)
+                            elif msg.type == web.WSMsgType.BINARY:
+                                await ws_server.send_bytes(msg.data)
+                            elif msg.type == web.WSMsgType.CLOSE:
+                                await ws_server.close()
+                    except (aiohttp.ClientConnectionResetError, ConnectionResetError):
+                        pass
+
+                async def pump_server_to_client():
+                    try:
+                        async for msg in ws_server:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                await ws_client.send_str(msg.data)
+                            elif msg.type == aiohttp.WSMsgType.BINARY:
+                                await ws_client.send_bytes(msg.data)
+                            elif msg.type == aiohttp.WSMsgType.CLOSE:
+                                await ws_client.close()
+                    except (aiohttp.ClientConnectionResetError, ConnectionResetError):
+                        pass
+
+                tasks = [
+                    asyncio.create_task(pump_client_to_server()),
+                    asyncio.create_task(pump_server_to_client()),
+                ]
+                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*done, *pending, return_exceptions=True)
+        return ws_client
+
+    body = await request.read()
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in {"host", "content-length", "transfer-encoding"}
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.request(
+            request.method,
+            target_url,
+            data=body if body else None,
+            headers=headers,
+            allow_redirects=False,
+        ) as resp:
+            response_headers = {
+                key: value
+                for key, value in resp.headers.items()
+                if key.lower() not in {"content-length", "transfer-encoding", "connection"}
+            }
+            return web.Response(
+                status=resp.status,
+                headers=response_headers,
+                body=await resp.read(),
+            )
 
 
 async def session_cleanup(request):
@@ -1113,17 +1234,15 @@ async def on_shutdown(app):
     websockets.clear()
     session_websockets.clear()
     ws_to_session.clear()
-    session_peer_connections.clear()
 
     # Close all RTSP streams
     for session_id in list(rtsp_tracks.keys()):
         await _stop_rtsp_session(session_id)
     logger.info("RTSP streams closed")
 
-    # Close all peer connections
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
+    for session_id in list(livekit_workers.keys()):
+        await stop_livekit_worker(session_id)
+    logger.info("LiveKit workers closed")
 
     for session_id, session in list(sessions.items()):
         svc = session.get("vlm_service")
@@ -1157,7 +1276,8 @@ async def create_app(test_mode=False):
     setup_asr_routes(app)
     setup_tts_routes(app)
     setup_local_file_routes(app)
-    app.router.add_post("/offer", offer)
+    app.router.add_post("/api/livekit/token", livekit_token)
+    app.router.add_route("*", "/livekit/{tail:.*}", livekit_proxy)
     app.router.add_post("/api/session/cleanup", session_cleanup)
 
     # RTSP endpoints
@@ -1268,7 +1388,7 @@ def main():
     from . import __version__
 
     parser = argparse.ArgumentParser(
-        description="WebRTC Joy VL Interaction - Real-time vision model interaction",
+        description="LiveKit Joy VL Interaction - Real-time vision model interaction",
         epilog="Examples:\n"
         "  vLLM:    python -m joy_interaction_webui.server --model llama-3.2-11b-vision-instruct --api-base http://localhost:8000/v1\n"
         "  SGLang:  python -m joy_interaction_webui.server --model llama-3.2-11b-vision-instruct --api-base http://localhost:30000/v1\n"
@@ -1399,7 +1519,6 @@ def main():
         "api_base": api_base,
         "api_key": api_key,
         "prompt": args.prompt,
-        "system_prompt_key": vlm_service.system_prompt_key,
     }
     sessions["default"] = {
         "vlm_service": vlm_service,

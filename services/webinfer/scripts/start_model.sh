@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 if [[ -n "${VENV_ACTIVATE:-}" ]]; then
   set +u
   source "${VENV_ACTIVATE}"
@@ -18,17 +17,6 @@ MAIN_MODEL_PORT="${MAIN_MODEL_PORT:-7060}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-131072}"
 MAIN_GPU_MEMORY_UTILIZATION="${MAIN_GPU_MEMORY_UTILIZATION:-0.9}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
-MAIN_SMOKE_ENABLE="${MAIN_SMOKE_ENABLE:-1}"
-MAIN_SMOKE_ATTEMPTS="${MAIN_SMOKE_ATTEMPTS:-120}"
-MAIN_SMOKE_INTERVAL="${MAIN_SMOKE_INTERVAL:-2.0}"
-MAIN_SMOKE_TIMEOUT="${MAIN_SMOKE_TIMEOUT:-60.0}"
-MAIN_LOG_FILE=""
-if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
-  MAIN_LOG_DIR="${MAIN_LOG_DIR:-${SERVICE_DIR}/main_vllm_logs}"
-  mkdir -p "${MAIN_LOG_DIR}"
-  MAIN_LOG_FILE="${MAIN_LOG_FILE:-${MAIN_LOG_DIR}/vllm_${MAIN_MODEL_PORT}.log}"
-  exec > >(tee -a "${MAIN_LOG_FILE}") 2>&1
-fi
 
 if [[ ! -d "${MODEL_PATH}" ]] || [[ -z "$(find "${MODEL_PATH}" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
     echo "主模型目录不存在或为空: ${MODEL_PATH}" >&2
@@ -46,21 +34,7 @@ echo "  Tensor parallel size: ${TENSOR_PARALLEL_SIZE}"
 echo "  Data parallel size: ${DATA_PARALLEL_SIZE}"
 echo "  Local data parallel size: ${DATA_PARALLEL_SIZE_LOCAL}"
 echo "  Max model len: ${MAX_MODEL_LEN}"
-echo "  Smoke warmup: ${MAIN_SMOKE_ENABLE} (attempts=${MAIN_SMOKE_ATTEMPTS}, interval=${MAIN_SMOKE_INTERVAL}s, timeout=${MAIN_SMOKE_TIMEOUT}s)"
-if [[ -n "${MAIN_LOG_FILE}" ]]; then
-    echo "  Log:   ${MAIN_LOG_FILE}"
-else
-    echo "  Log:   disabled"
-fi
 echo "============================================================"
-
-MODEL_PID=""
-cleanup() {
-    if [[ -n "${MODEL_PID}" ]]; then
-        kill "${MODEL_PID}" 2>/dev/null || true
-    fi
-}
-trap cleanup INT TERM
 
 CUDA_VISIBLE_DEVICES="${MAIN_GPU}" "${PYTHON_BIN}" -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_PATH}" \
@@ -72,23 +46,4 @@ CUDA_VISIBLE_DEVICES="${MAIN_GPU}" "${PYTHON_BIN}" -m vllm.entrypoints.openai.ap
     --data-parallel-size "${DATA_PARALLEL_SIZE}" \
     --data-parallel-size-local "${DATA_PARALLEL_SIZE_LOCAL}" \
     --enable-prefix-caching \
-    --enable-chunked-prefill &
-MODEL_PID=$!
-
-if [[ "${MAIN_SMOKE_ENABLE}" != "0" ]]; then
-    (
-        echo "Main VLM smoke: warming ${SERVED_MODEL_NAME} on http://127.0.0.1:${MAIN_MODEL_PORT}/v1"
-        if "${PYTHON_BIN}" "${SCRIPT_DIR}/../smoke.py" main-vlm \
-            --api-base "http://127.0.0.1:${MAIN_MODEL_PORT}/v1" \
-            --model "${SERVED_MODEL_NAME}" \
-            --attempts "${MAIN_SMOKE_ATTEMPTS}" \
-            --interval "${MAIN_SMOKE_INTERVAL}" \
-            --timeout "${MAIN_SMOKE_TIMEOUT}"; then
-            echo "Main VLM smoke: completed"
-        else
-            echo "Main VLM smoke: failed; model server will keep running" >&2
-        fi
-    ) &
-fi
-
-wait "${MODEL_PID}"
+    --enable-chunked-prefill

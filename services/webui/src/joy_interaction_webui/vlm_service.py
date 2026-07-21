@@ -33,33 +33,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT_DEFAULT_KEY = "DEFAULT_SYSTEM_PROMPT_EN"
-SYSTEM_PROMPT_NO_DELEGATION_KEY = "DEFAULT_SYSTEM_PROMPT_NO_DELEGATION"
-SYSTEM_PROMPT_OPTIONS = (
-    {
-        "key": SYSTEM_PROMPT_DEFAULT_KEY,
-        "label": "Default (delegation)",
-        "description": "DEFAULT_SYSTEM_PROMPT_EN",
-    },
-    {
-        "key": SYSTEM_PROMPT_NO_DELEGATION_KEY,
-        "label": "No delegation",
-        "description": "DEFAULT_SYSTEM_PROMPT_NO_DELEGATION",
-    },
-)
-_VALID_SYSTEM_PROMPT_KEYS = {option["key"] for option in SYSTEM_PROMPT_OPTIONS}
-
 
 def _format_seconds_words(value: float) -> str:
     rounded = math.floor(value * 10 + 0.5) / 10
     return f"{rounded:.1f} seconds"
-
-
-def _normalize_system_prompt_key(value: Optional[str]) -> str:
-    key = str(value or SYSTEM_PROMPT_DEFAULT_KEY).strip()
-    if key in _VALID_SYSTEM_PROMPT_KEYS:
-        return key
-    return SYSTEM_PROMPT_DEFAULT_KEY
 
 
 class VLMService:
@@ -73,7 +50,6 @@ class VLMService:
         prompt: Optional[str] = None,
         max_tokens: int = 512,
         session_id: str = "default",
-        system_prompt_key: str = SYSTEM_PROMPT_DEFAULT_KEY,
     ):
         self.model = model
         self.api_base = api_base
@@ -81,7 +57,6 @@ class VLMService:
         self.prompt = prompt
         self.max_tokens = max_tokens
         self.session_id = session_id
-        self.system_prompt_key = _normalize_system_prompt_key(system_prompt_key)
         self.client = AsyncOpenAI(base_url=api_base, api_key=api_key)
         self.current_response = "Initializing..."
         self.is_processing = False
@@ -101,25 +76,6 @@ class VLMService:
         self.last_inference_time = 0.0  # seconds
         self.total_inferences = 0
         self.total_inference_time = 0.0
-
-    @staticmethod
-    def system_prompt_options() -> list[dict[str, str]]:
-        return [dict(option) for option in SYSTEM_PROMPT_OPTIONS]
-
-    def update_system_prompt_key(self, key: Optional[str]) -> str:
-        self.system_prompt_key = _normalize_system_prompt_key(key)
-        logger.info(
-            "Updated system prompt for session %s to: %s",
-            self.session_id,
-            self.system_prompt_key,
-        )
-        return self.system_prompt_key
-
-    def _request_extra_headers(self) -> dict[str, str]:
-        return {
-            "x-streaming-session": self.session_id,
-            "x-system-prompt-key": self.system_prompt_key,
-        }
 
     def _format_frame_time_range(self, frame_metadata: Optional[dict]) -> str:
         if not frame_metadata:
@@ -240,7 +196,6 @@ class VLMService:
                 ],
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "system_prompt_key": self.system_prompt_key,
             }
             if frame_time_range:
                 self._last_request_payload["frame_time_range"] = frame_time_range
@@ -253,11 +208,10 @@ class VLMService:
                 "messages": messages,
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "extra_headers": self._request_extra_headers(),
+                "extra_headers": {"x-streaming-session": self.session_id},
             }
             if frame_time_range:
-                extra_body = {"frame_time_range": frame_time_range}
-                create_kwargs["extra_body"] = extra_body
+                create_kwargs["extra_body"] = {"frame_time_range": frame_time_range}
             response = await self.client.chat.completions.create(
                 **create_kwargs,
             )
@@ -531,7 +485,6 @@ class VLMService:
                 "messages": [{"role": "user", "content": debug_content}],
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "system_prompt_key": self.system_prompt_key,
                 "frame_time_ranges": frame_time_ranges,
             }
 
@@ -541,11 +494,10 @@ class VLMService:
                 "messages": messages,
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "extra_headers": self._request_extra_headers(),
+                "extra_headers": {"x-streaming-session": self.session_id},
             }
             if frame_time_ranges:
-                extra_body = {"frame_time_ranges": frame_time_ranges}
-                create_kwargs["extra_body"] = extra_body
+                create_kwargs["extra_body"] = {"frame_time_ranges": frame_time_ranges}
             response = await self.client.chat.completions.create(**create_kwargs)
             api_end = time.perf_counter()
 

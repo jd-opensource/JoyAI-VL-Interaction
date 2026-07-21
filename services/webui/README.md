@@ -1,6 +1,6 @@
 # JoyVL Interaction WebUI
 
-> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](README.zh-CN.md)
 
 Real-time vision-language model interaction WebUI. By default, it connects to a local OpenAI-compatible VLM service for local camera or video stream interaction previews.
 
@@ -36,7 +36,7 @@ source ../.venv/bin/activate
 Open in the browser:
 
 ```text
-https://localhost:8099
+https://localhost:8199
 ```
 
 If the browser warns about a self-signed certificate, continue to the site. If certificate files are missing, generate them first:
@@ -45,10 +45,34 @@ If the browser warns about a self-signed certificate, continue to the site. If c
 ./scripts/generate_cert.sh
 ```
 
+## LiveKit Server and Network Ports
+
+The WebUI uses **LiveKit Server 1.13.2** by default. On the first start, if `services/webui/.livekit/livekit-server` is missing, the startup script automatically downloads the binary for the current Linux architecture from LiveKit's GitHub Releases, verifies its SHA-256 checksum, and starts it. `x86_64/amd64` and `aarch64/arm64` are supported.
+
+Override the default version with the `LIVEKIT_VERSION` environment variable:
+
+```bash
+LIVEKIT_VERSION=1.13.2 ./scripts/start_server.sh
+```
+
+`.livekit/` is a generated local runtime directory containing the downloaded binary, configuration, and logs. It should not be committed to Git.
+
+Remote access requires exposing only **one TCP port and one UDP port**:
+
+| Purpose | Protocol and default port | Expose externally |
+| --- | --- | --- |
+| WebUI HTTPS and proxied LiveKit signaling | TCP `8199` | Yes |
+| WebRTC media | UDP `8299` | Yes |
+| Internal LiveKit signaling | TCP `8298` | No; listens on `127.0.0.1` only |
+
+The WebUI proxies LiveKit signaling through the `/livekit` path, so `TCP 8298` does not need to be exposed separately. If you change the WebUI port with `--port` or the media port with `LIVEKIT_UDP_PORT`, expose the resulting single TCP port and single UDP port in the firewall or cloud security group.
+
+These are inbound port requirements. The first automatic LiveKit Server download also requires outbound HTTPS access to GitHub Releases, but no additional inbound port is needed.
+
 ## Common Ports
 
 ```bash
-# Default script: WebUI 8099, backend 8070
+# Default script: WebUI 8199, backend 8070
 source ../.venv/bin/activate
 ./scripts/start_server.sh
 

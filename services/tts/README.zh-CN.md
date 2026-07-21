@@ -1,6 +1,6 @@
 # JoyVL TTS 适配器服务
 
-> 原文档: [README.md](./README.md)
+> 原文档: [README.md](README.md)
 
 该目录提供 `services/webui` 使用的最小 TTS 适配器服务。它将当前 WebUI TTS WebSocket 协议转换为 vLLM Omni Qwen3-TTS Speech WebSocket 协议。
 

@@ -6,14 +6,6 @@ ACTION="${1:-help}"
 if [[ $# -gt 0 ]]; then
   shift
 fi
-SERVICE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
-  ASR_LOG_DIR="${ASR_LOG_DIR:-${SERVICE_DIR}/logs}"
-  mkdir -p "$ASR_LOG_DIR"
-  ASR_RUN_LOG_FILE="${ASR_RUN_LOG_FILE:-${ASR_LOG_DIR}/run_${ACTION}.log}"
-  exec > >(tee -a "$ASR_RUN_LOG_FILE") 2>&1
-  echo "ASR run log: $ASR_RUN_LOG_FILE"
-fi
 
 usage() {
   cat <<'EOF'
@@ -40,8 +32,8 @@ run_all() {
     trap - EXIT INT TERM
     if [[ -n "$model_pid" ]]; then
       kill "$model_pid" 2>/dev/null || true
-      wait "$model_pid" 2>/dev/null || true
     fi
+    wait 2>/dev/null || true
     exit "$status"
   }
   trap cleanup EXIT INT TERM

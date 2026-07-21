@@ -66,6 +66,9 @@ agent-workspace/
 *.tmp
 *.bak
 
+# Downloaded LiveKit server and generated runtime state
+/services/webui/.livekit/
+
 # Local launch scripts
 /services/scripts/run_4gpu.sh
 /services/webinfer/scripts/start_4gpu_models_adapter.sh

@@ -1,6 +1,6 @@
 # RTSP Local Streaming Guide
 
-> 中文文档: [rtsp_streaming.zh-CN.md](./rtsp_streaming.zh-CN.md)
+> 中文文档: [rtsp_streaming.zh-CN.md](rtsp_streaming.zh-CN.md)
 
 This document explains how to simulate an RTSP camera from a local video file, so the WebUI or any RTSP client can test the RTSP input path without a physical IP camera.
 

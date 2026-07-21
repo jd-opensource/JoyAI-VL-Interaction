@@ -27,6 +27,7 @@ limitations under the License.
     <link rel="icon" type="image/png" sizes="96x96" href="favicon/favicon-96x96.png?v=joyai-red-2">
     <link rel="apple-touch-icon" sizes="180x180" href="favicon/apple-touch-icon.png?v=joyai-red-2">
     <link rel="manifest" href="favicon/site.webmanifest?v=joyai-red-2">
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.20.0/dist/livekit-client.umd.min.js"></script>
 
     <style>
         :root {
@@ -2756,7 +2757,6 @@ limitations under the License.
         #apiBaseUrl.applied,
         #apiKey.applied,
         #modelSelect.applied,
-        #systemPromptSelect.applied,
         #cameraSelect.applied,
         #rtspUrl.applied {
             animation: settingApplied 0.6s ease-out;
@@ -3444,7 +3444,7 @@ limitations under the License.
                     </div>
                 </div>
 
-                <!-- Column 2: Input Colors & WebRTC -->
+                <!-- Column 2: Input Colors & LiveKit -->
                 <div>
                     <div class="settings-section">
                         <div class="settings-section-title">Visual Style</div>
@@ -3462,7 +3462,7 @@ limitations under the License.
                     </div>
 
                     <div class="settings-section">
-                        <div class="settings-section-title">WebRTC</div>
+                        <div class="settings-section-title">LiveKit</div>
 
                         <div class="settings-item">
                             <div style="flex: 1; min-width: 0;">
@@ -3637,13 +3637,6 @@ limitations under the License.
                         </div>
                         <select id="modelSelect">
                             <option value="">Loading models...</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>System Prompt</label>
-                        <select id="systemPromptSelect">
-                            <option value="DEFAULT_SYSTEM_PROMPT_EN" selected>Default (delegation)</option>
-                            <option value="DEFAULT_SYSTEM_PROMPT_NO_DELEGATION">No delegation</option>
                         </select>
                     </div>
                 </div>
@@ -3943,12 +3936,13 @@ limitations under the License.
         const ttsEnabledToggle = document.getElementById('ttsEnabledToggle');
         const ttsSpeakingLine = document.getElementById('ttsSpeakingLine');
         const ttsSpeakingText = document.getElementById('ttsSpeakingText');
-        const systemPromptSelect = document.getElementById('systemPromptSelect');
         const backgroundEnabledToggle = document.getElementById('backgroundEnabledToggle');
         const backgroundFrameMultiplier = document.getElementById('backgroundFrameMultiplier');
         const backgroundMaxFrames = document.getElementById('backgroundMaxFrames');
 
-        let peerConnection = null;
+        let livekitRoom = null;
+        let livekitVideoTrack = null;
+        let livekitVideoPublication = null;
         let localStream = null;
         let websocket = null;
         let serverConfigApplied = false;
@@ -3999,10 +3993,9 @@ limitations under the License.
         let asrFinalFallbackTimer = null;
         let asrStopRequested = false;
         let mobileVoiceMode = false;
-        // Multi-session: one ID per page/tab; sent in WebSocket and /offer so this tab gets only its VLM output
+        // Multi-session: one ID per page/tab so this tab gets only its VLM output
         let sessionId = crypto.randomUUID ? crypto.randomUUID() : 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2);
         let isAnalysisRunning = false;
-        let isStreamStarting = false;
         let selectedCameraId = null;
         let videoDevices = [];
         let preferredCameraFacing = 'environment';
@@ -4080,30 +4073,16 @@ limitations under the License.
             // If already running, switch camera
             if (isAnalysisRunning && localStream) {
                 try {
-                    // Reset session for fresh inference
-                    //resetSession();
-
-                    // Stop current stream
-                    localStream.getTracks().forEach(track => track.stop());
-
-                    // Get new stream with selected camera
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                            deviceId: { exact: selectedCameraId },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                        }
+                    const oldStream = localStream;
+                    const newStream = await navigator.mediaDevices.getUserMedia({
+                        video: getVideoConstraints(),
+                        audio: false
                     });
-
-                    showProcessedVideoStream(localStream, streamStartToken);
-
-                    // Replace track in peer connection
-                    const videoTrack = localStream.getVideoTracks()[0];
-                    const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (sender) {
-                        await sender.replaceTrack(videoTrack);
-                        console.log('Camera switched successfully');
+                    await replaceLiveKitVideoTrack(newStream);
+                    if (oldStream) {
+                        oldStream.getTracks().forEach(track => track.stop());
                     }
+                    console.log('Camera switched successfully');
                 } catch (err) {
                     console.error('Error switching camera:', err);
                     alert('Failed to switch camera: ' + err.message);
@@ -6373,44 +6352,6 @@ limitations under the License.
             renderVlmHistory({ animateLast: true });
         }
 
-        const FALLBACK_SYSTEM_PROMPT_OPTIONS = [
-            { key: 'DEFAULT_SYSTEM_PROMPT_EN', label: 'Default (delegation)' },
-            { key: 'DEFAULT_SYSTEM_PROMPT_NO_DELEGATION', label: 'No delegation' }
-        ];
-
-        function applySystemPromptOptions(options, selectedKey) {
-            if (!systemPromptSelect) return;
-            const resolvedOptions = Array.isArray(options) && options.length
-                ? options
-                : FALLBACK_SYSTEM_PROMPT_OPTIONS;
-            const key = selectedKey || 'DEFAULT_SYSTEM_PROMPT_EN';
-
-            systemPromptSelect.innerHTML = '';
-            resolvedOptions.forEach(optionData => {
-                const option = document.createElement('option');
-                option.value = optionData.key;
-                option.textContent = optionData.label || optionData.key;
-                if (optionData.description) {
-                    option.title = optionData.description;
-                }
-                systemPromptSelect.appendChild(option);
-            });
-
-            systemPromptSelect.value = resolvedOptions.some(optionData => optionData.key === key)
-                ? key
-                : 'DEFAULT_SYSTEM_PROMPT_EN';
-        }
-
-        function sendSystemPromptSelection() {
-            if (!systemPromptSelect || !websocket || websocket.readyState !== WebSocket.OPEN) {
-                return;
-            }
-            websocket.send(JSON.stringify({
-                type: 'update_system_prompt',
-                system_prompt_key: systemPromptSelect.value || 'DEFAULT_SYSTEM_PROMPT_EN'
-            }));
-        }
-
         function applyBackgroundConfig(config) {
             if (!config) return;
             backgroundConfig = config;
@@ -6802,19 +6743,6 @@ limitations under the License.
             });
         }
 
-        if (systemPromptSelect) {
-            systemPromptSelect.addEventListener('change', () => {
-                if (isAnalysisRunning || isStreamStarting) {
-                    return;
-                }
-                sendSystemPromptSelection();
-                systemPromptSelect.classList.add('applied');
-                setTimeout(() => {
-                    systemPromptSelect.classList.remove('applied');
-                }, 600);
-            });
-        }
-
         colorfulFocusToggle.addEventListener('change', (e) => {
             const enabled = e.target.checked;
             localStorage.setItem('colorfulFocus', enabled);
@@ -7005,11 +6933,6 @@ limitations under the License.
             processEvery.title = isAnalysisRunning ? '推理中不可修改，请先停止视频' : '';
             framesPerBatch.disabled = isAnalysisRunning;
             framesPerBatch.title = isAnalysisRunning ? '推理中不可修改，请先停止视频' : '';
-            if (systemPromptSelect) {
-                const systemPromptLocked = isAnalysisRunning || isStreamStarting;
-                systemPromptSelect.disabled = systemPromptLocked;
-                systemPromptSelect.title = systemPromptLocked ? '推理中不可修改，请先停止视频' : '';
-            }
         }
 
         function setVideoWaitingForStream(waiting) {
@@ -7051,7 +6974,6 @@ limitations under the License.
                 if (token !== streamStartToken || videoElement.srcObject !== stream) {
                     return;
                 }
-                isStreamStarting = false;
                 isAnalysisRunning = true;
                 updatePromptAvailability();
                 if (revealVideoAfterMetricsToken === token) {
@@ -7073,6 +6995,94 @@ limitations under the License.
                 });
             } else {
                 markStreaming();
+            }
+        }
+
+        function getVideoConstraints() {
+            const videoConstraints = {
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            };
+            if (selectedCameraId) {
+                videoConstraints.deviceId = { exact: selectedCameraId };
+            }
+            return videoConstraints;
+        }
+
+        function getLiveKitClient() {
+            const client = window.LivekitClient || window.LiveKitClient || window.livekitClient;
+            if (!client) {
+                throw new Error('LiveKit client SDK failed to load');
+            }
+            return client;
+        }
+
+        async function connectLiveKitRoom() {
+            const client = getLiveKitClient();
+            const response = await fetch('/api/livekit/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId })
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error || 'Failed to create LiveKit session');
+            }
+
+            const config = await response.json();
+            const room = new client.Room({
+                adaptiveStream: false,
+                dynacast: false,
+            });
+            await room.connect(config.url, config.token);
+            livekitRoom = room;
+            return room;
+        }
+
+        async function publishLocalVideoTrack() {
+            if (!livekitRoom || !localStream) {
+                return;
+            }
+            const client = getLiveKitClient();
+            const mediaTrack = localStream.getVideoTracks()[0];
+            if (!mediaTrack) {
+                throw new Error('No local video track available');
+            }
+            livekitVideoTrack = mediaTrack;
+            livekitVideoPublication = await livekitRoom.localParticipant.publishTrack(mediaTrack, {
+                source: client.Track.Source.Camera,
+            });
+        }
+
+        async function replaceLiveKitVideoTrack(newStream) {
+            const oldTrack = livekitVideoTrack;
+            livekitVideoTrack = null;
+            livekitVideoPublication = null;
+            if (oldTrack && livekitRoom) {
+                try {
+                    await livekitRoom.localParticipant.unpublishTrack(oldTrack, false);
+                } catch (error) {
+                    console.warn('Unable to unpublish old LiveKit track:', error);
+                }
+            }
+            localStream = newStream;
+            showProcessedVideoStream(localStream, streamStartToken);
+            await publishLocalVideoTrack();
+        }
+
+        async function disconnectLiveKitRoom() {
+            if (livekitVideoTrack && livekitRoom) {
+                try {
+                    await livekitRoom.localParticipant.unpublishTrack(livekitVideoTrack, false);
+                } catch (error) {
+                    console.warn('Unable to unpublish LiveKit track:', error);
+                }
+            }
+            livekitVideoTrack = null;
+            livekitVideoPublication = null;
+            if (livekitRoom) {
+                await livekitRoom.disconnect();
+                livekitRoom = null;
             }
         }
 
@@ -8239,7 +8249,6 @@ limitations under the License.
                     if (data.background_model) {
                         applyBackgroundConfig(data.background_model);
                     }
-                    applySystemPromptOptions(data.system_prompt_options, data.system_prompt_key);
                     const reqCb = document.getElementById('debugShowRequestPayload');
                     const resCb = document.getElementById('debugShowResponsePayload');
                     const memCb = document.getElementById('debugShowMemoryState');
@@ -8260,11 +8269,6 @@ limitations under the License.
                 } else if (data.type === 'prompt_updated') {
                     // Prompt was updated on server (already handled in applyPrompt)
                     console.log('Prompt updated:', data.prompt);
-                } else if (data.type === 'system_prompt_updated') {
-                    if (systemPromptSelect && data.system_prompt_key) {
-                        systemPromptSelect.value = data.system_prompt_key;
-                    }
-                    console.log('System prompt updated:', data.system_prompt_key);
                 } else if (data.type === 'processing_updated') {
                     if (data.process_interval != null) processEvery.value = String(data.process_interval);
                     console.log('Processing interval updated:', data.process_interval, 's');
@@ -8363,7 +8367,6 @@ limitations under the License.
             streamStartToken += 1;
             const token = streamStartToken;
             isAnalysisRunning = false;
-            isStreamStarting = true;
             revealVideoAfterMetricsToken = null;
             cancelRevealVideoFallback();
             updatePromptAvailability();
@@ -8404,7 +8407,7 @@ limitations under the License.
 
         }
 
-        // Start WebRTC (Webcam mode)
+        // Start LiveKit webcam publishing
         async function startWebcam(token) {
             try {
                 if (!websocket || websocket.readyState !== WebSocket.OPEN) {
@@ -8413,70 +8416,15 @@ limitations under the License.
 
                 updateStatus('Requesting camera...', 'processing');
 
-                // Use selected camera or default
-                const videoConstraints = {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                };
-
-                if (selectedCameraId) {
-                    videoConstraints.deviceId = { exact: selectedCameraId };
-                }
-
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: videoConstraints,
+                    video: getVideoConstraints(),
                     audio: false
                 });
 
                 updateStatus('Connecting...', 'processing');
                 showProcessedVideoStream(localStream, token);
-
-                peerConnection = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                });
-
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
-                });
-
-                peerConnection.ontrack = (event) => {
-                    console.log('Received remote track');
-                };
-
-                peerConnection.oniceconnectionstatechange = () => {
-                    console.log('ICE connection state:', peerConnection.iceConnectionState);
-                    switch (peerConnection.iceConnectionState) {
-                        case 'connected':
-                            if (isAnalysisRunning) {
-                                updateStatus('Streaming', 'connected');
-                            }
-                            break;
-                        case 'disconnected':
-                        case 'failed':
-                        case 'closed':
-                            updateStatus('Disconnected', 'disconnected');
-                            stop();
-                            break;
-                    }
-                };
-
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-
-                const response = await fetch('/offer', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        sdp: peerConnection.localDescription.sdp,
-                        type: peerConnection.localDescription.type,
-                        session_id: sessionId,
-                    }),
-                });
-
-                const answer = await response.json();
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                await connectLiveKitRoom();
+                await publishLocalVideoTrack();
 
             } catch (error) {
                 console.error('Error starting webcam:', error);
@@ -8497,82 +8445,17 @@ limitations under the License.
 
                 if (!rtspUrl) {
                     alert('Please enter an RTSP URL');
-                    isStreamStarting = false;
                     setVideoWaitingForStream(false);
                     resetVideoButtons();
-                    updatePromptAvailability();
                     return;
                 }
 
                 updateStatus('Connecting to RTSP stream...', 'processing');
 
-                // Create WebRTC peer connection (no local stream needed for RTSP)
-                peerConnection = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                });
-
-                // Receive processed video from server
-                peerConnection.ontrack = (event) => {
-                    console.log('Received RTSP stream from server');
-                    if (event.track.kind === 'video') {
-                        showProcessedVideoStream(event.streams[0], token);
-                    }
-                };
-
-                peerConnection.oniceconnectionstatechange = () => {
-                    console.log('ICE connection state:', peerConnection.iceConnectionState);
-                    switch (peerConnection.iceConnectionState) {
-                        case 'connected':
-                            if (isAnalysisRunning) {
-                                updateStatus('Streaming', 'connected');
-                            }
-                            break;
-                        case 'disconnected':
-                        case 'failed':
-                        case 'closed':
-                            updateStatus('Disconnected', 'disconnected');
-                            stop();
-                            break;
-                    }
-                };
-
-                // Create offer (recvonly - we're only receiving video from server)
-                peerConnection.addTransceiver('video', { direction: 'recvonly' });
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-
-                // Wait for ICE gathering to complete before sending offer (with timeout)
-                // This ensures all ICE candidates are embedded in the SDP
-                console.log('Waiting for ICE gathering to complete...');
-                await new Promise((resolve) => {
-                    if (peerConnection.iceGatheringState === 'complete') {
-                        resolve();
-                    } else {
-                        const checkState = () => {
-                            if (peerConnection.iceGatheringState === 'complete') {
-                                peerConnection.removeEventListener('icegatheringstatechange', checkState);
-                                resolve();
-                            }
-                        };
-                        peerConnection.addEventListener('icegatheringstatechange', checkState);
-
-                        // Timeout after 5 seconds - proceed anyway to avoid hanging
-                        setTimeout(() => {
-                            peerConnection.removeEventListener('icegatheringstatechange', checkState);
-                            console.warn('ICE gathering timeout - proceeding anyway');
-                            resolve();
-                        }, 5000);
-                    }
-                });
-                console.log('ICE gathering state:', peerConnection.iceGatheringState, '- sending offer');
-
-                // Send offer with RTSP URL and session to server
-                const response = await fetch('/offer', {
+                const response = await fetch('/api/rtsp/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        sdp: peerConnection.localDescription.sdp,
-                        type: peerConnection.localDescription.type,
                         rtsp_url: rtspUrl,
                         session_id: sessionId,
                     })
@@ -8583,8 +8466,9 @@ limitations under the License.
                     throw new Error(error.error || 'Failed to connect to RTSP stream');
                 }
 
-                const answer = await response.json();
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                isAnalysisRunning = true;
+                updatePromptAvailability();
+                revealVideoWhenReady(token);
 
                 // Disable RTSP URL field and Test button while streaming
                 rtspUrlInput.disabled = true;
@@ -8592,16 +8476,10 @@ limitations under the License.
 
             } catch (error) {
                 console.error('Error starting RTSP:', error);
-                isStreamStarting = false;
                 updateStatus(`Error: ${error.message}`, 'disconnected');
                 alert('Failed to connect to RTSP stream: ' + error.message);
                 setVideoWaitingForStream(false);
                 resetVideoButtons();
-                updatePromptAvailability();
-                if (peerConnection) {
-                    peerConnection.close();
-                    peerConnection = null;
-                }
             }
         }
 
@@ -8609,7 +8487,6 @@ limitations under the License.
         async function stop({ clearConversation = false } = {}) {
             streamStartToken += 1;
             isAnalysisRunning = false;
-            isStreamStarting = false;
             revealVideoAfterMetricsToken = null;
             cancelRevealVideoFallback();
             mobileVoiceMode = false;
@@ -8628,16 +8505,27 @@ limitations under the License.
                 fadeTimeout = null;
             }
 
+            const activeTab = document.querySelector('.input-source-tab.active');
+            const inputSource = activeTab ? activeTab.getAttribute('data-source') : 'webcam';
+
+            if (inputSource === 'rtsp') {
+                try {
+                    await fetch('/api/rtsp/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId })
+                    });
+                } catch (error) {
+                    console.warn('Unable to stop RTSP session:', error);
+                }
+            }
+
+            await disconnectLiveKitRoom();
+
             // Stop webcam (if in webcam mode)
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
-            }
-
-            // Close WebRTC peer connection (used by both webcam and RTSP)
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
             }
 
             videoElement.srcObject = null;

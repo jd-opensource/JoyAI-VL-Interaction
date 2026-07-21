@@ -1,8 +1,8 @@
 """
-RTSP Video Track for IP Camera Support
+RTSP video reader for IP camera support.
 
-This module provides VideoStreamTrack implementation for RTSP streams,
-allowing joy-interaction-webui to process IP camera feeds instead of just webcams.
+This module provides a small async frame reader for RTSP streams so the WebUI can
+process IP camera feeds without an in-process WebRTC stack.
 
 SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0
@@ -14,7 +14,6 @@ import logging
 import re
 import threading
 from typing import Optional
-from aiortc import VideoStreamTrack
 from av import VideoFrame
 
 # Suppress verbose ffmpeg/libav logging (HEVC decoder errors are normal for IP cameras)
@@ -24,9 +23,9 @@ av.logging.set_level(av.logging.FATAL)  # Only show fatal errors that stop the s
 logger = logging.getLogger(__name__)
 
 
-class RTSPVideoTrack(VideoStreamTrack):
+class RTSPVideoTrack:
     """
-    Video track that reads from RTSP stream and converts to aiortc VideoFrame.
+    Video reader that returns decoded PyAV VideoFrame objects from RTSP.
 
     This enables processing of IP camera feeds through the same pipeline as webcam input.
     Supports automatic reconnection on stream failure.
@@ -52,7 +51,6 @@ class RTSPVideoTrack(VideoStreamTrack):
             reconnect_delay: Base delay between reconnection attempts in seconds (default: 2.0)
             options: Additional PyAV container options (default: TCP transport)
         """
-        super().__init__()
         self.rtsp_url = rtsp_url
         self.reconnect_attempts = reconnect_attempts
         self.reconnect_delay = reconnect_delay
@@ -121,7 +119,6 @@ class RTSPVideoTrack(VideoStreamTrack):
         """
         Receive next frame from RTSP stream.
 
-        This is called by aiortc framework to get video frames.
         Runs demuxing/decoding in executor to avoid blocking event loop.
 
         Returns:
@@ -259,8 +256,6 @@ class RTSPVideoTrack(VideoStreamTrack):
                 finally:
                     self.container = None
                     self.stream = None
-
-        super().stop()
 
     @property
     def is_connected(self) -> bool:

@@ -22,8 +22,7 @@
   <a href="#-quick-start"><b>🚀 Quick Start</b></a> |
   <a href="#-capability"><b>🧩 Capability</b></a> |
   <a href="#-evaluation"><b>📊 Evaluation</b></a> |
-  <a href="#-community--support"><b>😊 Wechat</b></a> |
-  <a href="#-citation"><b>📝 Citation</b></a> 
+  <a href="#-citation"><b>📝 Citation</b></a>
 </p>
 
 <p>
@@ -37,7 +36,7 @@
 
 </div>
 
-> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](README.zh-CN.md)
 
 ## 🔥 News
 
@@ -84,7 +83,9 @@ cd JoyAI-VL-Interaction
 ./services/scripts/run.sh minimal
 ```
 
-Then open `https://127.0.0.1:8099` in your browser.
+Then open `https://127.0.0.1:8199` in your browser.
+
+The WebUI automatically downloads and starts LiveKit Server 1.13.2. For remote access, only one TCP port (default `8199`, for WebUI HTTPS and proxied LiveKit signaling) and one UDP port (default `8299`, for WebRTC media) need to be exposed. LiveKit's internal signaling port, `TCP 8298`, listens on `127.0.0.1` only and does not need to be exposed. See the [WebUI documentation](services/webui/README.md#livekit-server-and-network-ports) for version, download, and port configuration details.
 
 👉 For the full setup (ASR, TTS, background agent) and configuration details, see the [Getting Started Guide](doc/getting_started.md).
 
@@ -161,7 +162,7 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 ├── services/
 │   ├── scripts/           # Service orchestration entrypoints (run/stop)
 │   ├── webinfer/          # Real-time video inference (OpenAI-compatible API)
-│   ├── webui/             # Browser frontend + WebRTC streaming
+│   ├── webui/             # Browser frontend + LiveKit streaming
 │   ├── asr/               # Speech recognition adapter (Qwen3-ASR)
 │   ├── tts/               # Speech synthesis adapter (Qwen3-TTS)
 │   └── background-agent/  # Background task delegation agent
@@ -188,13 +189,7 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 - [ ] **Unified online + offline model** — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding
 - [ ] **Codec version** — model variant with the predictive video codec (AdaCodec) for lower token cost over long streams
 - [ ] **Quantized versions** — for lighter, lower-cost deployment
-- [x] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
-
-## 😊 Community & Support
-
-<div align="center">
-  <img src="weixin.jpg" alt="qrcode3" width="50%" />
-</div>
+- [ ] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
 
 ## 🙏 Acknowledgments
 

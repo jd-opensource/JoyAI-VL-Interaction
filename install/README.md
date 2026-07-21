@@ -1,6 +1,6 @@
 # JoyVL Installation Compatibility Notes
 
-> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](README.zh-CN.md)
 
 This `install` directory keeps the core WebUI installation, optional service adapters, and heavy model runtime environments separate.
 `install/` no longer provides service startup entrypoints; startup scripts live under `services/`, with service-level scripts in each component's `scripts/` directory.

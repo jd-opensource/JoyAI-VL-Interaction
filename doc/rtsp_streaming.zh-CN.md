@@ -1,6 +1,6 @@
 # RTSP 本地推流说明
 
-> 原文档: [rtsp_streaming.md](./rtsp_streaming.md)
+> 原文档: [rtsp_streaming.md](rtsp_streaming.md)
 
 这份文档说明如何把本地视频文件模拟成 RTSP 摄像头，方便 WebUI 或其他 RTSP 客户端在没有真实 IP 摄像头时测试 RTSP 输入链路。
 

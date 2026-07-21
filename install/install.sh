@@ -19,6 +19,7 @@ INSTALL_TTS=0
 INSTALL_BACKGROUND_AGENT=0
 INSTALL_DEV=0
 DRY_RUN=0
+INSTALL_RETRIES="${INSTALL_RETRIES:-3}"
 
 usage() {
   cat <<'USAGE'
@@ -120,6 +121,61 @@ BACKGROUND_AGENT_API_URL=http://127.0.0.1:8079
 EOF
 }
 
+verify_install() {
+  run "$UV_BIN" pip check --python "$VENV_DIR/bin/python"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "+ verify imports and console scripts"
+    return
+  fi
+  PATH="$VENV_DIR/bin:$PATH" "$VENV_DIR/bin/python" - <<'PY'
+import importlib
+import shutil
+
+for module in [
+    "joy_interaction_webui.server",
+    "livekit.rtc",
+    "livekit.api",
+]:
+    importlib.import_module(module)
+    print(f"import ok: {module}")
+
+for command in ["joy-interaction-webui", "joy-interaction-webui-stop"]:
+    resolved = shutil.which(command)
+    print(f"command {command}: {resolved}")
+    if not resolved:
+        raise RuntimeError(f"missing command: {command}")
+PY
+}
+
+install_packages() {
+  run "$UV_BIN" venv --python "$PYTHON_BIN" --seed "$VENV_DIR"
+  pip_install_editable "$WEBUI_DIR"
+  uv_pip_install "vllm==$VLLM_VERSION"
+
+  if [ "$INSTALL_ASR" -eq 1 ]; then
+    if [ "$INSTALL_DEV" -eq 1 ]; then
+      pip_install_editable "$ASR_DIR" dev
+    else
+      pip_install_editable "$ASR_DIR"
+    fi
+  fi
+
+  if [ "$INSTALL_TTS" -eq 1 ]; then
+    if [ "$INSTALL_DEV" -eq 1 ]; then
+      pip_install_editable "$TTS_DIR" dev
+    else
+      pip_install_editable "$TTS_DIR"
+    fi
+  fi
+
+  if [ "$INSTALL_BACKGROUND_AGENT" -eq 1 ]; then
+    pip_install_editable "$BACKGROUND_AGENT_DIR"
+    write_background_agent_runtime
+  fi
+
+  verify_install
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --with-asr)
@@ -182,29 +238,22 @@ if [ "$INSTALL_BACKGROUND_AGENT" -eq 1 ]; then
   copy_template "$INSTALL_DIR/pyproject.background-agent.toml" "$BACKGROUND_AGENT_DIR/pyproject.toml"
 fi
 
-run "$UV_BIN" venv --python "$PYTHON_BIN" --seed "$VENV_DIR"
-pip_install_editable "$WEBUI_DIR"
-uv_pip_install "vllm==$VLLM_VERSION"
-
-if [ "$INSTALL_ASR" -eq 1 ]; then
-  if [ "$INSTALL_DEV" -eq 1 ]; then
-    pip_install_editable "$ASR_DIR" dev
-  else
-    pip_install_editable "$ASR_DIR"
-  fi
-fi
-
-if [ "$INSTALL_TTS" -eq 1 ]; then
-  if [ "$INSTALL_DEV" -eq 1 ]; then
-    pip_install_editable "$TTS_DIR" dev
-  else
-    pip_install_editable "$TTS_DIR"
-  fi
-fi
-
-if [ "$INSTALL_BACKGROUND_AGENT" -eq 1 ]; then
-  pip_install_editable "$BACKGROUND_AGENT_DIR"
-  write_background_agent_runtime
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf '+ rm -rf %q\n' "$VENV_DIR"
+  install_packages
+else
+  attempt=1
+  while :; do
+    rm -rf "$VENV_DIR"
+    if install_packages; then
+      break
+    fi
+    if [ "$attempt" -ge "$INSTALL_RETRIES" ]; then
+      die "安装或校验失败，已重试 $attempt 次"
+    fi
+    echo "安装或校验失败，删除 $VENV_DIR 后重试 ($attempt/$INSTALL_RETRIES)..." >&2
+    attempt=$((attempt + 1))
+  done
 fi
 
 echo "安装完成。"

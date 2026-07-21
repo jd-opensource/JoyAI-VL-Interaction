@@ -14,7 +14,9 @@ ASR_ADAPTER_PORT="${ASR_ADAPTER_PORT:-8994}"
 TTS_MODEL_PORT="${TTS_MODEL_PORT:-8991}"
 TTS_ADAPTER_PORT="${TTS_ADAPTER_PORT:-8992}"
 BACKGROUND_AGENT_PORT="${BACKGROUND_AGENT_PORT:-8079}"
-WEBUI_PORT="${WEBUI_PORT:-8099}"
+WEBUI_PORT="${WEBUI_PORT:-8199}"
+LIVEKIT_SIGNAL_PORT="${LIVEKIT_SIGNAL_PORT:-8298}"
+LIVEKIT_UDP_PORT="${LIVEKIT_UDP_PORT:-8299}"
 PIDS_TO_KILL=()
 
 usage() {
@@ -31,7 +33,7 @@ Environment:
   GRACE_SECONDS=10
   ASR_MODEL_PORT=8993 ASR_ADAPTER_PORT=8994
   TTS_MODEL_PORT=8991 TTS_ADAPTER_PORT=8992
-  BACKGROUND_AGENT_PORT=8079 WEBUI_PORT=8099
+  BACKGROUND_AGENT_PORT=8079 WEBUI_PORT=8199 LIVEKIT_SIGNAL_PORT=8298 LIVEKIT_UDP_PORT=8299
 EOF
 }
 
@@ -185,6 +187,13 @@ stop_background_agent() {
 stop_webui() {
   PIDS_TO_KILL=()
   add_pids_on_port "${WEBUI_PORT}"
+  add_pids_on_port "${LIVEKIT_SIGNAL_PORT}"
+  if command -v fuser >/dev/null 2>&1; then
+    for pid in $(fuser -n udp "${LIVEKIT_UDP_PORT}" 2>/dev/null || true); do
+      add_pid "${pid}"
+    done
+  fi
+  add_pids_by_pattern "livekit-server.*livekit.yaml"
   add_pids_by_pattern "joy_interaction_webui.server"
   add_pids_by_pattern "${SERVICES_DIR}/webui/scripts/start_server.sh"
   add_pids_by_pattern "services/webui/scripts/start_server.sh"

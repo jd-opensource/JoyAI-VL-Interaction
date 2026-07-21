@@ -13,13 +13,6 @@ STARTED_COUNT=0
 START_TOTAL=0
 SERVICE_READY_TIMEOUT="${SERVICE_READY_TIMEOUT:-900}"
 SERVICE_READY_INTERVAL="${SERVICE_READY_INTERVAL:-5}"
-if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
-  RUN_LOG_DIR="${RUN_LOG_DIR:-${SERVICES_DIR}/logs}"
-  mkdir -p "$RUN_LOG_DIR"
-  RUN_LOG_FILE="${RUN_LOG_FILE:-${RUN_LOG_DIR}/run_${ACTION}.log}"
-  exec > >(tee -a "$RUN_LOG_FILE") 2>&1
-  echo "Services run log: $RUN_LOG_FILE"
-fi
 
 usage() {
   cat <<'EOF'
@@ -97,50 +90,6 @@ all_service_count() {
   fi
 
   echo "$total"
-}
-
-all_expanded_script_count() {
-  local total=6
-
-  if is_enabled "${START_TTS:-1}"; then
-    total=$((total + 3))
-  fi
-  if is_enabled "${START_ASR:-1}"; then
-    total=$((total + 3))
-  fi
-  if is_enabled "${START_BACKGROUND_AGENT:-1}"; then
-    total=$((total + 1))
-  fi
-
-  echo "$total"
-}
-
-print_all_start_plan() {
-  local service_total
-  local expanded_total
-
-  service_total="$(all_service_count)"
-  expanded_total="$(all_expanded_script_count)"
-
-  echo "Start plan for services/scripts/run.sh all:"
-  echo "  Top-level child services: ${service_total}"
-  echo "  Expanded service scripts: ${expanded_total}"
-  echo "  Always starts: webinfer, WebUI"
-  if is_enabled "${START_TTS:-1}"; then
-    echo "  TTS: enabled"
-  else
-    echo "  TTS: disabled"
-  fi
-  if is_enabled "${START_ASR:-1}"; then
-    echo "  ASR: enabled"
-  else
-    echo "  ASR: disabled"
-  fi
-  if is_enabled "${START_BACKGROUND_AGENT:-1}"; then
-    echo "  background-agent: enabled"
-  else
-    echo "  background-agent: disabled"
-  fi
 }
 
 http_ok() {
@@ -245,15 +194,12 @@ wait_for_backends_ready() {
 
 cleanup() {
   local status=$?
-  local pid
   trap - EXIT INT TERM
   if [[ ${#PIDS[@]} -gt 0 ]]; then
     echo "Stopping services..."
     kill "${PIDS[@]}" 2>/dev/null || true
   fi
-  for pid in "${PIDS[@]:-}"; do
-    wait "$pid" 2>/dev/null || true
-  done
+  wait 2>/dev/null || true
   exit "$status"
 }
 
@@ -294,7 +240,6 @@ run_minimal() {
 run_all() {
   trap cleanup EXIT INT TERM
   set_start_total "$(all_service_count)"
-  print_all_start_plan
   start_background "webinfer" bash "$SCRIPT_DIR/run.sh" webinfer
 
   if is_enabled "${START_TTS:-1}"; then

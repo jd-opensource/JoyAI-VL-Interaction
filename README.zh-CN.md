@@ -36,7 +36,7 @@
 
 </div>
 
-> 原文档: [README.md](./README.md)
+> 原文档: [README.md](README.md)
 
 ## 🔥 最新动态
 
@@ -83,7 +83,9 @@ cd JoyAI-VL-Interaction
 ./services/scripts/run.sh minimal
 ```
 
-然后在浏览器中打开 `https://127.0.0.1:8099`。
+然后在浏览器中打开 `https://127.0.0.1:8199`。
+
+WebUI 会自动下载并启动 LiveKit Server 1.13.2。远程访问时只需对外开放一个 TCP 端口（默认 `8199`，用于 WebUI HTTPS 和 LiveKit 信令）和一个 UDP 端口（默认 `8299`，用于 WebRTC 媒体传输）。LiveKit 的内部信令端口 `TCP 8298` 仅监听 `127.0.0.1`，无需对外开放。版本、自动下载和端口配置详见 [WebUI 文档](services/webui/README.zh-CN.md#livekit-server-与网络端口)。
 
 👉 如需完整部署 ASR、TTS、后台 agent 以及更多配置细节，请参阅[入门指南](doc/getting_started.zh-CN.md)。
 
@@ -160,7 +162,7 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 ├── services/
 │   ├── scripts/           # 服务编排入口（run/stop）
 │   ├── webinfer/          # 实时视频推理（OpenAI 兼容 API）
-│   ├── webui/             # 浏览器前端 + WebRTC 流
+│   ├── webui/             # 浏览器前端 + LiveKit 流
 │   ├── asr/               # 语音识别适配器（Qwen3-ASR）
 │   ├── tts/               # 语音合成适配器（Qwen3-TTS）
 │   └── background-agent/  # 后台任务委托 agent
@@ -187,7 +189,7 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 - [ ] **在线 + 离线统一模型** —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解
 - [ ] **Codec 版本** —— 搭载预测式视频编解码器（AdaCodec）的模型变体，降低长流场景下的 token 开销
 - [ ] **量化版本** —— 实现更轻量、更低成本的部署
-- [x] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
+- [ ] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
 
 ## 🙏 致谢
 

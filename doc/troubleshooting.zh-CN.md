@@ -1,6 +1,6 @@
 ## 🚑 故障排查
 
-> 原文档: [troubleshooting.md](./troubleshooting.md)
+> 原文档: [troubleshooting.md](troubleshooting.md)
 
 
 ### 启动和服务问题

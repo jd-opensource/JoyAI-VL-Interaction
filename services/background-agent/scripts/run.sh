@@ -20,10 +20,6 @@ export CODEX_API_WORKSPACE="${CODEX_API_WORKSPACE:-$DEFAULT_WORKSPACE}"
 export CODEX_API_HOST="${CODEX_API_HOST:-127.0.0.1}"
 export CODEX_API_PORT="${CODEX_API_PORT:-8079}"
 mkdir -p "$CODEX_API_WORKSPACE"
-BACKGROUND_AGENT_LOG_DIR="${BACKGROUND_AGENT_LOG_DIR:-${SERVICE_DIR}/logs}"
-mkdir -p "$BACKGROUND_AGENT_LOG_DIR"
-BACKGROUND_AGENT_LOG_FILE="${BACKGROUND_AGENT_LOG_FILE:-${BACKGROUND_AGENT_LOG_DIR}/background_agent_${CODEX_API_PORT}.log}"
-exec > >(tee -a "$BACKGROUND_AGENT_LOG_FILE") 2>&1
 
 if [ ! -f "$CODEX_HOME/config.toml" ]; then
   echo "Missing Codex config: $CODEX_HOME/config.toml" >&2
@@ -36,7 +32,6 @@ echo "  host: $CODEX_API_HOST"
 echo "  port: $CODEX_API_PORT"
 echo "  workspace: $CODEX_API_WORKSPACE"
 echo "  CODEX_HOME: $CODEX_HOME"
-echo "  log: $BACKGROUND_AGENT_LOG_FILE"
 
 cd "$SERVICE_DIR"
 if [ -d "$VENV_DIR" ]; then
