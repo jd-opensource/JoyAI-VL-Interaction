@@ -1,5 +1,7 @@
 # Container 部署
 
+> 原文档: [README.md](./README.md)
+
 同一份 Docker Compose 配置提供三个互斥硬件规格；启动任一规格时会自动关闭另外两个。
 
 | 规格 | 目标 GPU | 主模型 | `MAX_MODEL_LEN` | 主模型显存利用率 | 记忆策略 |
@@ -71,3 +73,16 @@ ${EDITOR:-vi} container/16GB/.env
 - `BACKGROUND_WORKSPACE_HOST`：后台 Agent 的可写工作目录。
 
 相对路径以 `container/docker-compose.yml` 为基准。`.env` 仅用于本机，不要提交 Codex 凭据。精确镜像版本见 `images.lock`。
+
+## 附录：调整记忆与单轮时长
+
+你可以修改当前所用规格的 `.env` 文件，根据实际需求平衡记忆效果、推理延迟和硬件占用：
+
+- `CHUNK`：每个中期记忆块包含的帧数。每轮处理一帧时，一个记忆块的近似时长为 `CHUNK × LIVE_VLM_PROCESS_INTERVAL` 秒。
+- `COMPRESS_EVERY_N_CHUNKS`：累计多少个中期记忆块后，将其压缩为长期记忆。
+- `MID_TERM_MAX_TOKENS` 和 `MID_TERM_TARGET_TOKEN_COUNT`：每条中期记忆摘要的最大长度和目标长度。
+- `LONG_TERM_MAX_TOKENS` 和 `LONG_TERM_TARGET_TOKEN_COUNT`：每条长期记忆摘要的最大长度和目标长度。
+- `LONG_TERM_MEMORY_WINDOW`：上下文中保留的长期记忆块数量。
+- `LIVE_VLM_PROCESS_INTERVAL`：一次推理 turn 的时间间隔，单位为秒。增大该值可降低处理频率和硬件负载，减小该值可提高交互速度，但会增加计算开销。
+
+缩短记忆长度、减少保留块数或降低处理频率，可以减少上下文和计算资源需求；如果硬件资源充足，则可以适当增大这些参数，以获得更长的记忆和更高的交互频率。

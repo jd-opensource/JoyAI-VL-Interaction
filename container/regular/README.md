@@ -1,5 +1,7 @@
 # Regular Profile
 
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
+
 Complete the prerequisites and image build in `../README.md` first.
 
 - Model: BF16 `JoyAI-VL-Interaction-Preview`

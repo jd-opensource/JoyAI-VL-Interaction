@@ -37,7 +37,7 @@
 
 </div>
 
-> 中文文档: [README.zh-CN.md](README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
 
 ## 🔥 News
 

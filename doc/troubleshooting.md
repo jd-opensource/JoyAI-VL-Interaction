@@ -1,6 +1,6 @@
 ## 🚑 Troubleshooting
 
-> 中文文档: [troubleshooting.zh-CN.md](troubleshooting.zh-CN.md)
+> 中文文档: [troubleshooting.zh-CN.md](./troubleshooting.zh-CN.md)
 
 ### Startup and Service Issues
 

@@ -1,6 +1,6 @@
 # JoyVL ASR Adapter Service
 
-> 中文文档: [README.zh-CN.md](README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
 
 This directory provides the ASR adapter service used by `services/webui`. It receives `pcm16` audio packets from the WebUI ASR bridge, wraps the audio as WAV, sends it to the vLLM `/v1/audio/transcriptions` endpoint, and returns recognition results in the format that the existing WebUI `asr.py` can parse.
 

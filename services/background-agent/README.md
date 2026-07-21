@@ -1,6 +1,6 @@
 # StreamingHarness Codex API
 
-> 中文文档: [README.zh-CN.md](README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
 
 Local FastAPI wrapper around the system `codex` CLI for background tasks.
 

@@ -1,6 +1,6 @@
 # System Architecture
 
-> 中文文档: [architecture.zh-CN.md](architecture.zh-CN.md)
+> 中文文档: [architecture.zh-CN.md](./architecture.zh-CN.md)
 
 ## Overview
 

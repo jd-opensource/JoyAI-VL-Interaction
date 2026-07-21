@@ -1,6 +1,6 @@
 # 系统架构
 
-> 原文档: [architecture.md](architecture.md)
+> 原文档: [architecture.md](./architecture.md)
 
 ## 概览
 

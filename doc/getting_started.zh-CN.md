@@ -1,6 +1,6 @@
 # 入门指南
 
-> 原文档: [getting_started.md](getting_started.md)
+> 原文档: [getting_started.md](./getting_started.md)
 
 ## 前置条件
 

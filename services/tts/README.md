@@ -1,6 +1,6 @@
 # JoyVL TTS Adapter Service
 
-> 中文文档: [README.zh-CN.md](README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
 
 This directory provides the minimal TTS adapter service used by `services/webui`. It converts the current WebUI TTS WebSocket protocol into the vLLM Omni Qwen3-TTS Speech WebSocket protocol.
 

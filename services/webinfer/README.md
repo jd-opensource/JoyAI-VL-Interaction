@@ -1,6 +1,6 @@
 # web_infer Overview
 
-> 中文文档: [README.zh-CN.md](README.zh-CN.md)
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
 
 `web_infer` is the real-time video inference service layer for StreamingHarness. It exposes an OpenAI-compatible HTTP API. It does not load models itself; instead, it forwards requests to local vLLM OpenAI API services, while the adapter maintains video frames, chunks, user questions, intermediate summaries, and long-term memory.
 

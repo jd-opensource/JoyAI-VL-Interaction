@@ -1,6 +1,6 @@
 # StreamingHarness Codex API
 
-> 原文档: [README.md](README.md)
+> 原文档: [README.md](./README.md)
 
 围绕系统 `codex` CLI 的本地 FastAPI 封装，用于后台任务。
 

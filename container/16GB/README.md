@@ -1,5 +1,7 @@
 # 16GB Profile
 
+> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
+
 Complete the prerequisites and image build in `../README.md` first.
 
 - Model: INT4 AWQ G32

@@ -1,6 +1,6 @@
 # 图片目录
 
-> 原文档: [README.md](README.md)
+> 原文档: [README.md](./README.md)
 
 由 WebUI 提供服务的图片资源。
 

@@ -1,6 +1,6 @@
 # JoyVL ASR 适配器服务
 
-> 原文档: [README.md](README.md)
+> 原文档: [README.md](./README.md)
 
 该目录提供 `services/webui` 使用的 ASR 适配器服务。它从 WebUI ASR 桥接层接收 `pcm16` 音频包，将音频封装为 WAV，发送到 vLLM `/v1/audio/transcriptions` 端点，并以现有 WebUI `asr.py` 能解析的格式返回识别结果。
 

@@ -36,7 +36,7 @@
 
 </div>
 
-> 原文档: [README.md](README.md)
+> 原文档: [README.md](./README.md)
 
 ## 🔥 最新动态
 

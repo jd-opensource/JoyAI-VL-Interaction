@@ -1,6 +1,6 @@
 # JoyVL Interaction WebUI
 
-> 原文档: [README.md](README.md)
+> 原文档: [README.md](./README.md)
 
 实时视觉语言模型交互 WebUI。默认情况下，它连接到本地 OpenAI 兼容 VLM 服务，用于本地摄像头或视频流交互预览。
 

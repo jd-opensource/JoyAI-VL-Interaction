@@ -1,6 +1,6 @@
 # Getting Started
 
-> 中文文档: [getting_started.zh-CN.md](getting_started.zh-CN.md)
+> 中文文档: [getting_started.zh-CN.md](./getting_started.zh-CN.md)
 
 ## Prerequisites
 

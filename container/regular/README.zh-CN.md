@@ -1,5 +1,7 @@
 # 常规规格
 
+> 原文档: [README.md](./README.md)
+
 请先按照 `../README.zh-CN.md` 完成环境准备和镜像构建。
 
 - 模型：BF16 `JoyAI-VL-Interaction-Preview`

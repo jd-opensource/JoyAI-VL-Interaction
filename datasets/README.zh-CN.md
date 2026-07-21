@@ -1,19 +1,19 @@
-# JoyAI-VL-Interaction Usage
+# JoyAI-VL-Interaction 使用说明
 
-> 中文文档: [README.zh-CN.md](./README.zh-CN.md)
+> 原文档: [README.md](./README.md)
 
-Dataset: https://huggingface.co/datasets/jdopensource/JoyAI-VL-Interaction
+数据集：https://huggingface.co/datasets/jdopensource/JoyAI-VL-Interaction
 
-### 1. Download Annotations
+### 1. 下载标注
 
 ```bash
 hf download hf://datasets/jdopensource/JoyAI-VL-Interaction \
   --local-dir ./JoyAI-VL-Interaction
 ```
 
-### 2. Data Format
+### 2. 数据格式
 
-Use the `source` field to locate the original video, then fill `video_path` with the absolute local path before running conversion.
+使用 `source` 字段定位原始视频，然后在运行转换前，将 `video_path` 填写为视频在本地的绝对路径。
 
 ```json
 [
@@ -32,10 +32,10 @@ Use the `source` field to locate the original video, then fill `video_path` with
 ]
 ```
 
-- `question`: user prompt list. `content` is the prompt text, and `time` is the timestamp in seconds when the prompt is issued.
-- `response`: ground-truth response list. `content` is the expected answer, and `time` is the timestamp in seconds when the answer or event should occur.
+- `question`：用户提示列表。`content` 是提示文本，`time` 是发出提示时的时间戳，单位为秒。
+- `response`：真实响应列表。`content` 是预期答案，`time` 是答案或事件应当出现的时间戳，单位为秒。
 
-### 3. Run Conversion
+### 3. 运行转换
 
 ```bash
 python ./convert_data.py \
@@ -47,10 +47,9 @@ python ./convert_data.py \
   --workers NUM_WORKERS
 ```
 
+### 4. 转换后的输出格式
 
-### 4. Converted Output Format
-
-The script creates one user/assistant pair for each second. If a question starts at second 4 and the response is expected at second 7, the converted messages look like this:
+脚本会为每一秒创建一组 user/assistant 消息。如果问题从第 4 秒开始，预期响应出现在第 7 秒，转换后的消息如下：
 
 ```json
 [
