@@ -188,7 +188,7 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 - [ ] **Unified online + offline model** — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding
 - [ ] **Codec version** — model variant with the predictive video codec (AdaCodec) for lower token cost over long streams
 - [ ] **Quantized versions** — for lighter, lower-cost deployment
-- [ ] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
+- [x] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
 
 ## 😊 Community & Support
 
