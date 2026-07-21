@@ -1,0 +1,12 @@
+aiohttp==3.13.5
+aiohttp-cors==0.8.1
+aiortc==1.14.0
+av==16.1.0
+cryptography==48.0.0
+httpx==0.28.1
+numpy==2.2.6
+openai==2.38.0
+opencv-python-headless==4.13.0.92
+pillow==12.2.0
+psutil==7.2.2
+transformers==5.9.0

@@ -1,0 +1,645 @@
+services:
+  vllm-main:
+    image: "${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}"
+    runtime: nvidia
+    privileged: true
+    entrypoint: ["/bin/bash", "-lc"]
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-all}"
+      CUDA_VISIBLE_DEVICES: "${MAIN_GPU:-0}"
+      MODEL_PATH: "${MAIN_MODEL_PATH:-/tmp/models/JoyAI-VL-Interaction-Preview}"
+      SERVED_MODEL_NAME: "${SERVED_MODEL_NAME:-joyai-vl-interaction}"
+      MAIN_MODEL_PORT: "${MAIN_MODEL_PORT:-7060}"
+      MAX_MODEL_LEN: "${MAX_MODEL_LEN:-131072}"
+      MAIN_GPU_MEMORY_UTILIZATION: "${MAIN_GPU_MEMORY_UTILIZATION:-0.9}"
+      TENSOR_PARALLEL_SIZE: "${TENSOR_PARALLEL_SIZE:-1}"
+      DATA_PARALLEL_SIZE: "${DATA_PARALLEL_SIZE:-1}"
+      DATA_PARALLEL_SIZE_LOCAL: "${DATA_PARALLEL_SIZE_LOCAL:-1}"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:rw"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+      - "${MAIN_MODEL_ROOT:-${MODEL_ROOT:-../models}}:/tmp/main-model-root:ro"
+    ports:
+      - "${MAIN_MODEL_PORT:-7060}:${MAIN_MODEL_PORT:-7060}"
+    ipc: host
+    shm_size: "16g"
+    command:
+      - |
+        set -euo pipefail
+        test -d "$$MODEL_PATH"
+        exec python3 -m vllm.entrypoints.openai.api_server \
+          --host 0.0.0.0 \
+          --model "$$MODEL_PATH" \
+          --served-model-name "$$SERVED_MODEL_NAME" \
+          --port "$$MAIN_MODEL_PORT" \
+          --gpu-memory-utilization "$$MAIN_GPU_MEMORY_UTILIZATION" \
+          --max-model-len "$$MAX_MODEL_LEN" \
+          --tensor-parallel-size "$$TENSOR_PARALLEL_SIZE" \
+          --data-parallel-size "$$DATA_PARALLEL_SIZE" \
+          --data-parallel-size-local "$$DATA_PARALLEL_SIZE_LOCAL" \
+          --enable-prefix-caching \
+          --enable-chunked-prefill
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/v1/models' % os.environ.get('MAIN_MODEL_PORT', '7060'), timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+
+  vllm-summary:
+    image: "${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}"
+    runtime: nvidia
+    privileged: true
+    entrypoint: ["/bin/bash", "-lc"]
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-all}"
+      CUDA_VISIBLE_DEVICES: "${SUMMARY_GPU:-1}"
+      SUMMARY_MODEL_PATH: "${SUMMARY_MODEL_PATH:-/tmp/models/Qwen3-VL-4B-Instruct}"
+      SUMMARY_SERVED_MODEL_NAME: "${SUMMARY_SERVED_MODEL_NAME:-/tmp/models/Qwen3-VL-4B-Instruct}"
+      SUMMARY_PORT: "${SUMMARY_PORT:-8065}"
+      SUMMARY_MAX_MODEL_LEN: "${SUMMARY_MAX_MODEL_LEN:-65536}"
+      SUMMARY_GPU_MEMORY_UTILIZATION: "${SUMMARY_GPU_MEMORY_UTILIZATION:-0.9}"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:rw"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+    ports:
+      - "${SUMMARY_PORT:-8065}:${SUMMARY_PORT:-8065}"
+    ipc: host
+    shm_size: "16g"
+    command:
+      - |
+        set -euo pipefail
+        test -d "$$SUMMARY_MODEL_PATH"
+        exec python3 -m vllm.entrypoints.openai.api_server \
+          --host 0.0.0.0 \
+          --model "$$SUMMARY_MODEL_PATH" \
+          --served-model-name "$$SUMMARY_SERVED_MODEL_NAME" \
+          --port "$$SUMMARY_PORT" \
+          --max-model-len "$$SUMMARY_MAX_MODEL_LEN" \
+          --enable-prefix-caching \
+          --enable-chunked-prefill \
+          --gpu-memory-utilization "$$SUMMARY_GPU_MEMORY_UTILIZATION"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/v1/models' % os.environ.get('SUMMARY_PORT', '8065'), timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+
+  adapter:
+    image: joyai-vl-app:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.app
+    runtime: nvidia
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "${ADAPTER_GPU:-none}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-all}"
+      ADAPTER_HOST: "0.0.0.0"
+      ADAPTER_PORT: "${ADAPTER_PORT:-8070}"
+      ADAPTER_MODEL: "${ADAPTER_MODEL:-streaming-infer-adapter}"
+      MAIN_API_BASE: "http://vllm-main:${MAIN_MODEL_PORT:-7060}/v1"
+      MAIN_MODEL: "${SERVED_MODEL_NAME:-joyai-vl-interaction}"
+      SERVED_MODEL_NAME: "${SERVED_MODEL_NAME:-joyai-vl-interaction}"
+      SUMMARIZER_API_BASE: "http://vllm-summary:${SUMMARY_PORT:-8065}/v1"
+      SUMMARIZER_MODEL: "${SUMMARIZER_MODEL:-/tmp/models/Qwen3-VL-4B-Instruct}"
+      FRAME_SAVE_DIR: "${FRAME_SAVE_DIR:-/workspace/JoyAI-VL-Interaction-main/runtime/streaming_adapter_frames}"
+      ALLOWED_LOCAL_IMAGE_ROOTS: "${ALLOWED_LOCAL_IMAGE_ROOTS:-/workspace/JoyAI-VL-Interaction-main/runtime/streaming_adapter_frames}"
+      LIVE_ADAPTER_SAVE_ROOT: "${LIVE_ADAPTER_SAVE_ROOT:-/workspace/JoyAI-VL-Interaction-main/result}"
+      LIVE_SAVE_OUTPUTS: "${LIVE_SAVE_OUTPUTS:-true}"
+      CHUNK: "${CHUNK:-100}"
+      COMPRESS_EVERY_N_CHUNKS: "${COMPRESS_EVERY_N_CHUNKS:-5}"
+      MID_TERM_MAX_TOKENS: "${MID_TERM_MAX_TOKENS:-4000}"
+      MID_TERM_TARGET_TOKEN_COUNT: "${MID_TERM_TARGET_TOKEN_COUNT:-3000}"
+      LONG_TERM_MAX_TOKENS: "${LONG_TERM_MAX_TOKENS:-4000}"
+      LONG_TERM_TARGET_TOKEN_COUNT: "${LONG_TERM_TARGET_TOKEN_COUNT:-2000}"
+      LONG_TERM_MEMORY_WINDOW: "${LONG_TERM_MEMORY_WINDOW:-5}"
+      MAIN_MAX_TOKENS: "${MAIN_MAX_TOKENS:-256}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/webinfer:/workspace/JoyAI-VL-Interaction-main/services/webui/src"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:rw"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+    ports:
+      - "${ADAPTER_PORT:-8070}:${ADAPTER_PORT:-8070}"
+    depends_on:
+      vllm-main:
+        condition: service_healthy
+      vllm-summary:
+        condition: service_healthy
+    command: ["bash", "services/webinfer/scripts/start_adapter.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('ADAPTER_PORT', '8070'), timeout=5).read()\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  asr-model:
+    image: joyai-vl-asr-model:vllm0.22.0
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.asr-model
+      args:
+        VLLM_IMAGE: "${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}"
+    runtime: nvidia
+    privileged: true
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-all}"
+      CUDA_VISIBLE_DEVICES: "${ASR_GPU:-2}"
+      ASR_MODEL_PATH: "${ASR_MODEL_PATH:-/tmp/models/Qwen3-ASR-1.7B}"
+      ASR_MODEL_NAME: "${ASR_MODEL_NAME:-Qwen/Qwen3-ASR-1.7B}"
+      ASR_MODEL_PORT: "${ASR_MODEL_PORT:-8993}"
+      ASR_MAX_MODEL_LEN: "${ASR_MAX_MODEL_LEN:-32768}"
+      ASR_ENFORCE_EAGER: "${ASR_ENFORCE_EAGER:-1}"
+      ASR_TENSOR_PARALLEL_SIZE: "${ASR_TENSOR_PARALLEL_SIZE:-1}"
+      ASR_GPU_MEMORY_UTILIZATION: "${ASR_GPU_MEMORY_UTILIZATION:-0.3}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+    ports:
+      - "${ASR_MODEL_PORT:-8993}:${ASR_MODEL_PORT:-8993}"
+    ipc: host
+    shm_size: "16g"
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        test -d "$$ASR_MODEL_PATH"
+        if [ "$${ASR_ENFORCE_EAGER:-1}" = "1" ]; then
+          exec vllm serve "$$ASR_MODEL_PATH" \
+            --served-model-name "$$ASR_MODEL_NAME" \
+            --host 0.0.0.0 \
+            --port "$$ASR_MODEL_PORT" \
+            --max-model-len "$$ASR_MAX_MODEL_LEN" \
+            --tensor-parallel-size "$$ASR_TENSOR_PARALLEL_SIZE" \
+            --gpu-memory-utilization "$$ASR_GPU_MEMORY_UTILIZATION" \
+            --enforce-eager \
+            --trust-remote-code
+        fi
+        exec vllm serve "$$ASR_MODEL_PATH" \
+          --served-model-name "$$ASR_MODEL_NAME" \
+          --host 0.0.0.0 \
+          --port "$$ASR_MODEL_PORT" \
+          --max-model-len "$$ASR_MAX_MODEL_LEN" \
+          --tensor-parallel-size "$$ASR_TENSOR_PARALLEL_SIZE" \
+          --gpu-memory-utilization "$$ASR_GPU_MEMORY_UTILIZATION" \
+          --trust-remote-code
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/v1/models' % os.environ.get('ASR_MODEL_PORT', '8993'), timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+
+  asr-adapter:
+    image: joyai-vl-asr-adapter:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.asr-adapter
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      ASR_ADAPTER_HOST: "0.0.0.0"
+      ASR_ADAPTER_PORT: "${ASR_ADAPTER_PORT:-8994}"
+      ASR_UPSTREAM_URL: "http://asr-model:${ASR_MODEL_PORT:-8993}/v1/audio/transcriptions"
+      ASR_MODEL: "${ASR_MODEL_NAME:-Qwen/Qwen3-ASR-1.7B}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/asr"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+    ports:
+      - "${ASR_ADAPTER_PORT:-8994}:${ASR_ADAPTER_PORT:-8994}"
+    depends_on:
+      asr-model:
+        condition: service_healthy
+    command: ["bash", "-lc", "exec python3 services/asr/asr_adapter.py --host \"$${ASR_ADAPTER_HOST}\" --port \"$${ASR_ADAPTER_PORT}\""]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('ASR_ADAPTER_PORT', '8994'), timeout=5).read()\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  tts-model:
+    image: joyai-vl-tts-model:vllm0.22.0
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.tts-model
+      args:
+        VLLM_IMAGE: "${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}"
+    runtime: nvidia
+    privileged: true
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-all}"
+      CUDA_VISIBLE_DEVICES: "${TTS_GPU:-3}"
+      TTS_MODEL_PATH: "${TTS_MODEL_PATH:-/tmp/models/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
+      TTS_MODEL_NAME: "${TTS_MODEL_NAME:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
+      TTS_MODEL_PORT: "${TTS_MODEL_PORT:-8991}"
+      TTS_TENSOR_PARALLEL_SIZE: "${TTS_TENSOR_PARALLEL_SIZE:-1}"
+      TTS_GPU_MEMORY_UTILIZATION: "${TTS_GPU_MEMORY_UTILIZATION:-}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+    ports:
+      - "${TTS_MODEL_PORT:-8991}:${TTS_MODEL_PORT:-8991}"
+    ipc: host
+    shm_size: "16g"
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        test -d "$$TTS_MODEL_PATH"
+        if [ -n "$${TTS_GPU_MEMORY_UTILIZATION:-}" ]; then
+          exec vllm-omni serve "$$TTS_MODEL_PATH" \
+            --served-model-name "$$TTS_MODEL_NAME" \
+            --deploy-config services/tts/config/qwen3_tts_lowmem.yaml \
+            --omni \
+            --port "$$TTS_MODEL_PORT" \
+            --tensor-parallel-size "$$TTS_TENSOR_PARALLEL_SIZE" \
+            --gpu-memory-utilization "$$TTS_GPU_MEMORY_UTILIZATION" \
+            --trust-remote-code \
+            --enforce-eager
+        fi
+        exec vllm-omni serve "$$TTS_MODEL_PATH" \
+          --served-model-name "$$TTS_MODEL_NAME" \
+          --deploy-config services/tts/config/qwen3_tts_lowmem.yaml \
+          --omni \
+          --port "$$TTS_MODEL_PORT" \
+          --tensor-parallel-size "$$TTS_TENSOR_PARALLEL_SIZE" \
+          --trust-remote-code \
+          --enforce-eager
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/v1/models' % os.environ.get('TTS_MODEL_PORT', '8991'), timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+
+  tts-adapter:
+    image: joyai-vl-tts-adapter:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.tts-adapter
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      TTS_ADAPTER_HOST: "0.0.0.0"
+      TTS_ADAPTER_PORT: "${TTS_ADAPTER_PORT:-8992}"
+      TTS_UPSTREAM_URL: "ws://tts-model:${TTS_MODEL_PORT:-8991}/v1/audio/speech/stream"
+      TTS_MODEL: "${TTS_MODEL_NAME:-Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice}"
+      TTS_REQUEST_TIMEOUT: "${TTS_REQUEST_TIMEOUT:-360}"
+      TTS_IDLE_TIMEOUT: "${TTS_IDLE_TIMEOUT:-360}"
+      TTS_ENABLE_WARMUP: "${TTS_ENABLE_WARMUP:-1}"
+      TTS_WARMUP_HOST: "127.0.0.1"
+      TTS_WARMUP_TEXT: "${TTS_WARMUP_TEXT:-你好。}"
+      TTS_WARMUP_TIMEOUT: "${TTS_WARMUP_TIMEOUT:-360}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/tts"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+    ports:
+      - "${TTS_ADAPTER_PORT:-8992}:${TTS_ADAPTER_PORT:-8992}"
+    depends_on:
+      tts-model:
+        condition: service_healthy
+    command: ["bash", "-lc", "exec python3 services/tts/tts_adapter.py --host \"$${TTS_ADAPTER_HOST}\" --port \"$${TTS_ADAPTER_PORT}\""]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('TTS_ADAPTER_PORT', '8992'), timeout=5).read()\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  background-agent:
+    image: joyai-vl-background-model:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.background
+      args:
+        CODEX_NPM_PACKAGE: "${CODEX_NPM_PACKAGE:-@openai/codex@latest}"
+    working_dir: /workspace/JoyAI-VL-Interaction-main/services/background-agent
+    read_only: true
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=16m
+    environment:
+      HOME: "/tmp"
+      TMPDIR: "/tmp"
+      CODEX_HOME: "/tmp/codex-home"
+      CODEX_API_HOST: "0.0.0.0"
+      CODEX_API_PORT: "${BACKGROUND_AGENT_PORT:-8079}"
+      CODEX_API_WORKSPACE: "${BACKGROUND_WORKSPACE_CONTAINER:-/workspace/agent-workspace}"
+      CODEX_API_MAX_SUBAGENTS: "${BACKGROUND_AGENT_MAX_SUBAGENTS:-6}"
+      CODEX_API_TIMEOUT_SECONDS: "${BACKGROUND_AGENT_TIMEOUT_SECONDS:-600}"
+      CODEX_API_MAX_FRAMES: "${BACKGROUND_AGENT_MAX_FRAMES:-50}"
+      HTTP_PROXY: "${BACKGROUND_HTTP_PROXY:-}"
+      HTTPS_PROXY: "${BACKGROUND_HTTPS_PROXY:-}"
+      NO_PROXY: "${BACKGROUND_NO_PROXY:-}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/background-agent"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+      - "${BACKGROUND_WORKSPACE_HOST:-../agent-workspace}:${BACKGROUND_WORKSPACE_CONTAINER:-/workspace/agent-workspace}:rw"
+      - "${CODEX_HOME_HOST:-../services/background-agent/codex-home}:/codex-source:ro"
+      - "background-tmp:/tmp:rw"
+    ports:
+      - "${BACKGROUND_AGENT_PORT:-8079}:${BACKGROUND_AGENT_PORT:-8079}"
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        mkdir -p /tmp/codex-home "$$CODEX_API_WORKSPACE"
+        cp -a /codex-source/. /tmp/codex-home/
+        chown -R joybg:joybg /tmp/codex-home "$$CODEX_API_WORKSPACE"
+        codex --version
+        exec gosu joybg python3 -m uvicorn codex_api.main:app --host 0.0.0.0 --port "$$CODEX_API_PORT"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('CODEX_API_PORT', '8079'), timeout=5).read()\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  webui:
+    image: joyai-vl-app:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.app
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    network_mode: host
+    environment:
+      LIVE_VLM_API_BASE: "http://127.0.0.1:${ADAPTER_PORT:-8070}/v1"
+      LIVE_VLM_DEFAULT_MODEL: "${ADAPTER_MODEL:-streaming-infer-adapter}"
+      LIVE_VLM_PROCESS_INTERVAL: "${LIVE_VLM_PROCESS_INTERVAL:-1.0}"
+      LIVE_VLM_FRAMES_PER_BATCH: "${LIVE_VLM_FRAMES_PER_BATCH:-1}"
+      ASR_URL: "ws://127.0.0.1:${ASR_ADAPTER_PORT:-8994}/ws/asr"
+      TTS_URL: "ws://127.0.0.1:${TTS_ADAPTER_PORT:-8992}/ws/tts"
+      BACKGROUND_AGENT_API_URL: "http://127.0.0.1:${BACKGROUND_AGENT_PORT:-8079}"
+      BACKGROUND_AGENT_WORKSPACE: "${BACKGROUND_WORKSPACE_CONTAINER:-/workspace/agent-workspace}"
+      LIVE_VLM_LOCAL_FILE_ROOTS: "${LIVE_VLM_LOCAL_FILE_ROOTS:-/workspace/agent-workspace:/workspace/JoyAI-VL-Interaction-main/services/webui/src/joy_interaction_webui/html}"
+      LIVE_VLM_HTML_ARTIFACT_DIR: "${LIVE_VLM_HTML_ARTIFACT_DIR:-html}"
+      WEBUI_PORT: "${WEBUI_PORT:-8099}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/webui/src:/workspace/JoyAI-VL-Interaction-main/services/webinfer"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:rw"
+      - "${MODEL_ROOT:-../models}:/tmp/models:ro"
+      - "${BACKGROUND_WORKSPACE_HOST:-../agent-workspace}:${BACKGROUND_WORKSPACE_CONTAINER:-/workspace/agent-workspace}:rw"
+    depends_on:
+      background-agent:
+        condition: service_healthy
+      warmup-multimodal:
+        condition: service_completed_successfully
+      warmup-summary:
+        condition: service_completed_successfully
+      warmup-asr:
+        condition: service_completed_successfully
+      warmup-tts:
+        condition: service_completed_successfully
+    command:
+      - python3
+      - -m
+      - joy_interaction_webui.server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${WEBUI_PORT:-8099}"
+      - --model
+      - "${ADAPTER_MODEL:-streaming-infer-adapter}"
+      - --api-base
+      - "http://127.0.0.1:${ADAPTER_PORT:-8070}/v1"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os, ssl, urllib.request; ctx=ssl._create_unverified_context(); urllib.request.urlopen('https://127.0.0.1:%s/' % os.environ.get('WEBUI_PORT', '8099'), context=ctx, timeout=5).read()\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  warmup-multimodal:
+    image: joyai-vl-app:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.app
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      ADAPTER_HOST: "adapter"
+      ADAPTER_PORT: "${ADAPTER_PORT:-8070}"
+      ADAPTER_MODEL: "${ADAPTER_MODEL:-streaming-infer-adapter}"
+      WARMUP_SILENCE_FRAMES: "${WARMUP_SILENCE_FRAMES:-13}"
+      WARMUP_TIMEOUT_SECONDS: "${WARMUP_TIMEOUT_SECONDS:-180}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+    depends_on:
+      adapter:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        python3 - <<'PY'
+        import base64
+        import io
+        import os
+        import time
+        import uuid
+
+        from openai import OpenAI
+        from PIL import Image, ImageDraw
+
+        adapter_host = os.environ.get("ADAPTER_HOST", "adapter")
+        adapter_port = os.environ.get("ADAPTER_PORT", "8070")
+        adapter_model = os.environ.get("ADAPTER_MODEL", "streaming-infer-adapter")
+        silence_frames = int(os.environ.get("WARMUP_SILENCE_FRAMES", "13"))
+        timeout_seconds = float(os.environ.get("WARMUP_TIMEOUT_SECONDS", "180"))
+
+        client = OpenAI(
+            base_url=f"http://{adapter_host}:{adapter_port}/v1",
+            api_key="EMPTY",
+            timeout=timeout_seconds,
+        )
+        session_id = f"startup-warmup-{uuid.uuid4().hex[:10]}"
+
+        def make_image_data_url(index: int) -> str:
+            color = ((index * 37) % 255, (index * 67) % 255, (index * 97) % 255)
+            image = Image.new("RGB", (640, 360), color)
+            draw = ImageDraw.Draw(image)
+            draw.text((20, 20), f"warmup {index}", fill=(255, 255, 255))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=85)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            return f"data:image/jpeg;base64,{encoded}"
+
+        def request_frame(index: int, prompt: str = ""):
+            content = []
+            if prompt:
+                content.append({"type": "text", "text": prompt})
+            content.append({"type": "image_url", "image_url": {"url": make_image_data_url(index)}})
+            return client.chat.completions.create(
+                model=adapter_model,
+                messages=[{"role": "user", "content": content}],
+                max_tokens=64,
+                temperature=0.7,
+                extra_headers={"x-streaming-session": session_id},
+                extra_body={
+                    "frame_time_range": f"{index}.0 seconds",
+                    "top_k": 40,
+                    "repetition_penalty": 1.1,
+                    "skip_special_tokens": False,
+                },
+            )
+
+        start = time.perf_counter()
+        for idx in range(silence_frames):
+            request_frame(idx)
+
+        query_start = time.perf_counter()
+        response = request_frame(silence_frames, "启动预热，请用一句中文描述当前画面。")
+        query_ms = (time.perf_counter() - query_start) * 1000
+        total_ms = (time.perf_counter() - start) * 1000
+        text = response.choices[0].message.content if response.choices else ""
+        print(
+            f"warmup_session={session_id} query_ms={query_ms:.1f} total_ms={total_ms:.1f} response={text[:80]!r}",
+            flush=True,
+        )
+        PY
+    restart: "no"
+
+  warmup-summary:
+    image: joyai-vl-app:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.app
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      SUMMARY_HOST: "vllm-summary"
+      SUMMARY_PORT: "${SUMMARY_PORT:-8065}"
+      SUMMARY_MODEL: "${SUMMARIZER_MODEL:-/tmp/models/Qwen3-VL-4B-Instruct}"
+      SUMMARY_WARMUP_TIMEOUT_SECONDS: "${SUMMARY_WARMUP_TIMEOUT_SECONDS:-180}"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+    depends_on:
+      vllm-summary:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        python3 - <<'PY'
+        import os
+        import time
+
+        from openai import OpenAI
+
+        host = os.environ.get("SUMMARY_HOST", "vllm-summary")
+        port = os.environ.get("SUMMARY_PORT", "8065")
+        model = os.environ.get("SUMMARY_MODEL", "/tmp/models/Qwen3-VL-4B-Instruct")
+        timeout = float(os.environ.get("SUMMARY_WARMUP_TIMEOUT_SECONDS", "180"))
+
+        client = OpenAI(base_url=f"http://{host}:{port}/v1", api_key="EMPTY", timeout=timeout)
+        start = time.perf_counter()
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "启动预热，请回复 ok。"}],
+            max_tokens=16,
+            temperature=0.0,
+        )
+        total_ms = (time.perf_counter() - start) * 1000
+        text = response.choices[0].message.content if response.choices else ""
+        print(f"summary_warmup_ms={total_ms:.1f} response={text[:80]!r}", flush=True)
+        PY
+    restart: "no"
+
+  warmup-asr:
+    image: joyai-vl-asr-adapter:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.asr-adapter
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      ASR_ADAPTER_PORT: "${ASR_ADAPTER_PORT:-8994}"
+      ASR_WARMUP_TIMEOUT: "${ASR_WARMUP_TIMEOUT:-180}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/asr"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+    depends_on:
+      asr-adapter:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        python3 - <<'PY'
+        import math
+        import struct
+        import wave
+        from pathlib import Path
+
+        sample_rate = 16000
+        duration_seconds = 1.0
+        output = Path("/tmp/joyai-asr-warmup.wav")
+        frames = bytearray()
+        for i in range(int(sample_rate * duration_seconds)):
+            value = int(1200 * math.sin(2 * math.pi * 440 * i / sample_rate))
+            frames.extend(struct.pack("<h", value))
+
+        with wave.open(str(output), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(bytes(frames))
+        PY
+        python3 services/asr/asr_adapter.py smoke \
+          --url "ws://asr-adapter:$${ASR_ADAPTER_PORT}/ws/asr" \
+          --wav /tmp/joyai-asr-warmup.wav \
+          --timeout "$${ASR_WARMUP_TIMEOUT}"
+    restart: "no"
+
+  warmup-tts:
+    image: joyai-vl-tts-adapter:latest
+    build:
+      context: .
+      network: host
+      dockerfile: Dockerfile.tts-adapter
+    working_dir: /workspace/JoyAI-VL-Interaction-main
+    environment:
+      TTS_ADAPTER_PORT: "${TTS_ADAPTER_PORT:-8992}"
+      TTS_WARMUP_TEXT: "${TTS_WARMUP_TEXT:-你好。}"
+      TTS_WARMUP_TIMEOUT: "${TTS_WARMUP_TIMEOUT:-360}"
+      TTS_WARMUP_MAX_TOKENS: "${TTS_WARMUP_MAX_TOKENS:-128}"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/workspace/JoyAI-VL-Interaction-main/services/tts"
+    volumes:
+      - "${CODE_ROOT:-..}:/workspace/JoyAI-VL-Interaction-main:ro"
+    depends_on:
+      tts-adapter:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        python3 services/tts/tts_adapter.py smoke \
+          --url "ws://tts-adapter:$${TTS_ADAPTER_PORT}/ws/tts" \
+          --text "$${TTS_WARMUP_TEXT}" \
+          --output /tmp/joyai-tts-warmup.pcm \
+          --timeout "$${TTS_WARMUP_TIMEOUT}" \
+          --max-tokens "$${TTS_WARMUP_MAX_TOKENS}"
+    restart: "no"
+
+volumes:
+  background-tmp:

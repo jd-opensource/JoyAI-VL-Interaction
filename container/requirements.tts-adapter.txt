@@ -1,0 +1,8 @@
+fastapi==0.136.3
+httptools==0.8.0
+python-dotenv==1.2.2
+PyYAML==6.0.3
+uvicorn==0.48.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==16.0
