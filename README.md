@@ -124,7 +124,9 @@ Beyond the nine capabilities above, JoyAI-VL-Interaction can call a live game as
 
 We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction settings**, judged pairwise by human raters for both response quality and timing.
 
-### JoyAI-VL-Interaction vs Doubao
+### Online
+
+#### JoyAI-VL-Interaction vs Doubao
 
 
 | Aspect                       | JoyAI-VL-Interaction | Tie       | Doubao   |
@@ -138,7 +140,7 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 | **Overall**                  | **77.6%**            | **17.2%** | **5.2%** |
 
 
-### JoyAI-VL-Interaction vs Gemini
+#### JoyAI-VL-Interaction vs Gemini
 
 
 | Aspect                       | JoyAI-VL-Interaction | Tie       | Gemini   |
@@ -151,7 +153,8 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 | Long visual memory           | 77.8%                | 22.2%     | 0.0%     |
 | **Overall**                  | **87.9%**            | **10.3%** | **1.7%** |
 
-### JoyAI-VL-Interaction vs Qwen3-VL-8B-Instruct
+### Offline
+#### JoyAI-VL-Interaction vs Qwen3-VL-8B-Instruct
 
 Across **26 standard video understanding benchmarks**, JoyAI-VL-Interaction achieves an average score of **57.53**, outperforming [Qwen3-VL-8B-Instruct](https://github.com/QwenLM/Qwen3-VL) at **54.16** by **3.37 points**.
 

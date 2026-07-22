@@ -22,6 +22,7 @@
   <a href="#-快速开始"><b>🚀 快速开始</b></a> |
   <a href="#-能力"><b>🧩 能力</b></a> |
   <a href="#-评测"><b>📊 评测</b></a> |
+  <a href="#-community--support"><b>😊 Wechat</b></a> |
   <a href="#-引用"><b>📝 引用</b></a>
 </p>
 
@@ -123,7 +124,9 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 
 我们在 **58 个真实的事件驱动视觉交互场景**中评测 JoyAI-VL-Interaction，并由人工评审从响应质量和响应时机两方面进行成对比较。
 
-### JoyAI-VL-Interaction vs Doubao
+### 在线
+
+#### JoyAI-VL-Interaction vs Doubao
 
 
 | 维度      | JoyAI-VL-Interaction | 平局        | Doubao   |
@@ -137,7 +140,7 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 | **总体**  | **77.6%**            | **17.2%** | **5.2%** |
 
 
-### JoyAI-VL-Interaction vs Gemini
+#### JoyAI-VL-Interaction vs Gemini
 
 
 | 维度      | JoyAI-VL-Interaction | 平局        | Gemini   |
@@ -150,11 +153,13 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 | 长程视觉记忆  | 77.8%                | 22.2%     | 0.0%     |
 | **总体**  | **87.9%**            | **10.3%** | **1.7%** |
 
-### JoyAI-VL-Interaction vs Qwen3-VL-8B-Instruct
+### 离线
+
+#### JoyAI-VL-Interaction vs Qwen3-VL-8B-Instruct
 
 在 **26 个标准视频理解基准**上，JoyAI-VL-Interaction 的平均得分为 **57.53**，相比 [Qwen3-VL-8B-Instruct](https://github.com/QwenLM/Qwen3-VL) 的 **54.16** 提升 **3.37 分**。
 
-![JoyAI-VL-Interaction 与 Qwen3-VL-8B-Instruct 基准对比](img/benchmark_table.png)
+<img src="img/benchmark_table.png" alt="JoyAI-VL-Interaction and Qwen3-VL-8B-Instruct benchmark comparison" width="600">
 
 ## 🚧 局限与未来工作
 
@@ -193,10 +198,16 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 - [x] 发布技术报告
 - [x] 发布时间对齐交互训练数据
 - [x] 发布 HuggingFace 模型
-- [x] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
 - [x] **在线 + 离线统一模型** —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解
+- [x] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
 - [ ] **Codec 版本** —— 搭载预测式视频编解码器（AdaCodec）的模型变体，降低长流场景下的 token 开销
 - [ ] **量化版本** —— 实现更轻量、更低成本的部署
+
+## 😊 Community & Support
+
+<div align="center">
+  <img src="weixin.jpg" alt="qrcode3" width="50%" />
+</div>
 
 ## 🙏 致谢
 
