@@ -152,7 +152,7 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 
 ### JoyAI-VL-Interaction vs Qwen3-VL-8B-Instruct
 
-在 **23 个标准视频理解基准**上，JoyAI-VL-Interaction 的平均得分为 **57.53**，相比 [Qwen3-VL-8B-Instruct](https://github.com/QwenLM/Qwen3-VL) 的 **54.16** 提升 **3.37 分**。
+在 **26 个标准视频理解基准**上，JoyAI-VL-Interaction 的平均得分为 **57.53**，相比 [Qwen3-VL-8B-Instruct](https://github.com/QwenLM/Qwen3-VL) 的 **54.16** 提升 **3.37 分**。
 
 ![JoyAI-VL-Interaction 与 Qwen3-VL-8B-Instruct 基准对比](img/benchmark_table.png)
 
