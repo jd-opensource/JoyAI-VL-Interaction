@@ -6,7 +6,7 @@
 
 <h1>JoyAI-VL-Interaction</h1>
 
-<p><strong>⚡ An Open Real-time Video-Language Interaction System</strong></p>
+<p><strong>⚡ An Open Real-time Video-Language Interaction Model and System</strong></p>
 
 <p>An 8B-scale, fully open vision-language interaction model with a complete deployable system — the model, training recipe, time-aligned interaction data, and a real-time streaming stack, all in one repository.</p>
 
