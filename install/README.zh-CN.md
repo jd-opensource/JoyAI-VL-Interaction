@@ -8,7 +8,7 @@
 
 所有默认模型权重路径都位于 `/tmp/models/<model-name>`。当前默认值为：
 
-- 主交互模型：`/tmp/models/JoyAI-VL-Interaction-Preview`，默认仓库 `jdopensource/JoyAI-VL-Interaction-Preview`
+- 主交互模型：`/tmp/models/jdopensource/JoyAI-VL-Interaction`，默认仓库 `jdopensource/JoyAI-VL-Interaction`
 - 摘要模型：`/tmp/models/Qwen3-VL-4B-Instruct`，默认仓库 `Qwen/Qwen3-VL-4B-Instruct`
 - ASR 模型：`/tmp/models/Qwen3-ASR-1.7B`，默认仓库 `Qwen/Qwen3-ASR-1.7B`
 - TTS 模型：`/tmp/models/Qwen3-TTS-12Hz-1.7B-CustomVoice`，默认仓库 `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`

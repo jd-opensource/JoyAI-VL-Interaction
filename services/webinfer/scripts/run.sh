@@ -32,8 +32,8 @@ fi
 
 # ==================== Model paths ====================
 MODEL_ROOT="${MODEL_ROOT:-/tmp/models}"
-STREAMING_MODEL_REPO="${STREAMING_MODEL_REPO:-jdopensource/JoyAI-VL-Interaction-Preview}"
-STREAMING_MODEL_NAME="${STREAMING_MODEL_NAME:-JoyAI-VL-Interaction-Preview}"
+STREAMING_MODEL_REPO="${STREAMING_MODEL_REPO:-jdopensource/JoyAI-VL-Interaction}"
+STREAMING_MODEL_NAME="${STREAMING_MODEL_NAME:-jdopensource/JoyAI-VL-Interaction}"
 MODEL_PATH="${MODEL_PATH:-${MODEL_ROOT}/${STREAMING_MODEL_NAME}}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-${STREAMING_MODEL_NAME}}"
 
@@ -82,8 +82,8 @@ Common overrides:
   VENV_ACTIVATE=      # disable auto activation and use current shell environment
   PYTHON_BIN=/path/to/python
   MODEL_ROOT=/tmp/models
-  MODEL_PATH=/tmp/models/JoyAI-VL-Interaction-Preview
-  STREAMING_MODEL_REPO=jdopensource/JoyAI-VL-Interaction-Preview
+  MODEL_PATH=/tmp/models/jdopensource/JoyAI-VL-Interaction
+  STREAMING_MODEL_REPO=jdopensource/JoyAI-VL-Interaction
   SUMMARY_MODEL_REPO=Qwen/Qwen3-VL-4B-Instruct
   SUMMARY_MODEL_PATH=/tmp/models/Qwen3-VL-4B-Instruct
   MAIN_GPU=0 SUMMARY_GPU=1 MAIN_MODEL_PORT=7060 SUMMARY_PORT=8065 ADAPTER_PORT=8070

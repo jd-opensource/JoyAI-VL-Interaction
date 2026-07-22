@@ -25,7 +25,7 @@ In one sentence: the frontend/WebUI sends video frames to `8070`; `live_adapter.
 | Service | Port | Default model/path | Notes |
 | ------- | ---- | ------------------ | ----- |
 | adapter | `8070` | `streaming-infer-adapter` | External OpenAI-compatible API. |
-| main model | `7060` | `/tmp/models/JoyAI-VL-Interaction-Preview` | Routed when the request uses `model=JoyAI-VL-Interaction-Preview`. |
+| main model | `7060` | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | Routed when the request uses `model=jdopensource/JoyAI-VL-Interaction`. |
 | summary model | `8065` | `/tmp/models/Qwen3-VL-4B-Instruct` | Default repo is `Qwen/Qwen3-VL-4B-Instruct`; it handles both intermediate summaries and long-term memory compression. |
 
 Default GPU assignment: summary model uses `0`, main model uses `3`. `scripts/run.sh` first tries to use the shared environment `services/.venv` created by the install script. To specify another environment, pass `VENV_ACTIVATE`, or set `PYTHON_BIN` to choose the Python executable. To force the current shell environment, set `VENV_ACTIVATE=`.
@@ -75,7 +75,7 @@ http://127.0.0.1:8070/v1
 | Endpoint | Purpose |
 | -------- | ------- |
 | `GET /health` | Health check; returns the backend list, session count, and summarizer status. |
-| `GET /v1/models` | Returns available main models; default is `JoyAI-VL-Interaction-Preview`. |
+| `GET /v1/models` | Returns available main models; default is `jdopensource/JoyAI-VL-Interaction`. |
 | `POST /v1/chat/completions` | Core endpoint; compatible with OpenAI chat completions and supports image frames. |
 | `POST /v1/streaming/reset` | Resets a session and flushes existing outputs. |
 
@@ -118,8 +118,8 @@ Recommended image input format is the OpenAI format:
 | ------------------------------ | ------- | ----------- |
 | `VENV_ACTIVATE` | Empty | Optional virtual environment activate script path. |
 | `PYTHON_BIN` | `python` | Python executable used to start vLLM and the adapter. |
-| `STREAMING_MODEL_REPO` | `jdopensource/JoyAI-VL-Interaction-Preview` | Hugging Face repo used by `../../install/download-models.sh --all`. |
-| `MODEL_PATH` | `/tmp/models/JoyAI-VL-Interaction-Preview` | Local path of the main model. |
+| `STREAMING_MODEL_REPO` | `jdopensource/JoyAI-VL-Interaction` | Hugging Face repo used by `../../install/download-models.sh --all`. |
+| `MODEL_PATH` | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | Local path of the main model. |
 | `SUMMARY_MODEL_REPO` | `Qwen/Qwen3-VL-4B-Instruct` | Summary model Hugging Face repo used by `../../install/download-models.sh --all`. |
 | `SUMMARY_MODEL_PATH` | `/tmp/models/Qwen3-VL-4B-Instruct` | Local path of the summary model; download it first if it does not exist. |
 | `ADAPTER_PORT` | `8070` | Adapter listen port. |

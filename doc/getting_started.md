@@ -43,7 +43,7 @@ Default model paths:
 
 | Model | Default Path | HuggingFace Repo |
 |-------|-------------|------------------|
-| Main interaction model | `/tmp/models/JoyAI-VL-Interaction-Preview` | `jdopensource/JoyAI-VL-Interaction-Preview` |
+| Main interaction model | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | `jdopensource/JoyAI-VL-Interaction` |
 | Summary model | `/tmp/models/Qwen3-VL-4B-Instruct` | `Qwen/Qwen3-VL-4B-Instruct` |
 | ASR model (optional) | `/tmp/models/Qwen3-ASR-1.7B` | `Qwen/Qwen3-ASR-1.7B` |
 | TTS model (optional) | `/tmp/models/Qwen3-TTS-12Hz-1.7B-CustomVoice` | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` |
@@ -165,7 +165,7 @@ Key environment variables (set in start scripts or export before launch):
 |----------|---------|-------------|
 | `PYTHON_BIN` | `python` | Python binary for vLLM and adapter |
 | `VENV_ACTIVATE` | auto-detects `services/.venv` | Optional venv activate script path; set `VENV_ACTIVATE=` to use the current shell environment |
-| `MODEL_PATH` | `/tmp/models/JoyAI-VL-Interaction-Preview` | Main model local path |
+| `MODEL_PATH` | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | Main model local path |
 | `SUMMARY_MODEL_PATH` | `/tmp/models/Qwen3-VL-4B-Instruct` | Summary model local path |
 | `MAIN_GPU` | `0` | Single physical GPU used by the streaming model service |
 | `SUMMARY_GPU` | `1` | Single physical GPU used by the summary model service |

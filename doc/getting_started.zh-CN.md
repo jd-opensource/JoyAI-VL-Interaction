@@ -41,7 +41,7 @@
 
 | 模型 | 默认路径 | HuggingFace 仓库 |
 |-------|-------------|------------------|
-| 主交互模型 | `/tmp/models/JoyAI-VL-Interaction-Preview` | `jdopensource/JoyAI-VL-Interaction-Preview` |
+| 主交互模型 | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | `jdopensource/JoyAI-VL-Interaction` |
 | 摘要模型 | `/tmp/models/Qwen3-VL-4B-Instruct` | `Qwen/Qwen3-VL-4B-Instruct` |
 | ASR 模型（可选） | `/tmp/models/Qwen3-ASR-1.7B` | `Qwen/Qwen3-ASR-1.7B` |
 | TTS 模型（可选） | `/tmp/models/Qwen3-TTS-12Hz-1.7B-CustomVoice` | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` |
@@ -156,7 +156,7 @@ MediaMTX 下载说明、辅助脚本示例和常见检查请参阅 [RTSP 本地�
 |----------|---------|-------------|
 | `PYTHON_BIN` | `python` | vLLM 和适配器使用的 Python 可执行文件 |
 | `VENV_ACTIVATE` | 自动检测 `services/.venv` | 可选虚拟环境 activate 脚本路径；设置 `VENV_ACTIVATE=` 可使用当前 shell 环境 |
-| `MODEL_PATH` | `/tmp/models/JoyAI-VL-Interaction-Preview` | 主模型本地路径 |
+| `MODEL_PATH` | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | 主模型本地路径 |
 | `SUMMARY_MODEL_PATH` | `/tmp/models/Qwen3-VL-4B-Instruct` | 摘要模型本地路径 |
 | `MAIN_GPU` | `0` | 流式模型服务使用的单张物理 GPU |
 | `SUMMARY_GPU` | `1` | 摘要模型服务使用的单张物理 GPU |

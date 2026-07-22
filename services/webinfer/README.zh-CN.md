@@ -25,7 +25,7 @@
 | 服务 | 端口 | 默认模型/路径 | 说明 |
 | ------- | ---- | ------------------ | ----- |
 | adapter | `8070` | `streaming-infer-adapter` | 外部 OpenAI 兼容 API。 |
-| main model | `7060` | `/tmp/models/JoyAI-VL-Interaction-Preview` | 当请求使用 `model=JoyAI-VL-Interaction-Preview` 时路由到这里。 |
+| main model | `7060` | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | 当请求使用 `model=jdopensource/JoyAI-VL-Interaction` 时路由到这里。 |
 | summary model | `8065` | `/tmp/models/Qwen3-VL-4B-Instruct` | 默认仓库为 `Qwen/Qwen3-VL-4B-Instruct`；同时处理中间摘要和长期记忆压缩。 |
 
 默认 GPU 分配：摘要模型使用 `0`，主模型使用 `3`。`scripts/run.sh` 会先尝试使用安装脚本创建的共享环境 `services/.venv`。如需指定其他环境，请传入 `VENV_ACTIVATE`，或设置 `PYTHON_BIN` 选择 Python 可执行文件。要强制使用当前 shell 环境，请设置 `VENV_ACTIVATE=`。
@@ -75,7 +75,7 @@ http://127.0.0.1:8070/v1
 | 端点 | 用途 |
 | -------- | ------- |
 | `GET /health` | 健康检查；返回后端列表、会话数量和摘要器状态。 |
-| `GET /v1/models` | 返回可用主模型；默认是 `JoyAI-VL-Interaction-Preview`。 |
+| `GET /v1/models` | 返回可用主模型；默认是 `jdopensource/JoyAI-VL-Interaction`。 |
 | `POST /v1/chat/completions` | 核心端点；兼容 OpenAI chat completions，并支持图像帧。 |
 | `POST /v1/streaming/reset` | 重置会话并清空已有输出。 |
 
@@ -118,8 +118,8 @@ x-streaming-session: <sessionId>
 | ------------------------------ | ------- | ----------- |
 | `VENV_ACTIVATE` | 空 | 可选虚拟环境 activate 脚本路径。 |
 | `PYTHON_BIN` | `python` | 用于启动 vLLM 和适配器的 Python 可执行文件。 |
-| `STREAMING_MODEL_REPO` | `jdopensource/JoyAI-VL-Interaction-Preview` | `../../install/download-models.sh --all` 使用的 Hugging Face 仓库。 |
-| `MODEL_PATH` | `/tmp/models/JoyAI-VL-Interaction-Preview` | 主模型本地路径。 |
+| `STREAMING_MODEL_REPO` | `jdopensource/JoyAI-VL-Interaction` | `../../install/download-models.sh --all` 使用的 Hugging Face 仓库。 |
+| `MODEL_PATH` | `/tmp/models/jdopensource/JoyAI-VL-Interaction` | 主模型本地路径。 |
 | `SUMMARY_MODEL_REPO` | `Qwen/Qwen3-VL-4B-Instruct` | `../../install/download-models.sh --all` 使用的摘要模型 Hugging Face 仓库。 |
 | `SUMMARY_MODEL_PATH` | `/tmp/models/Qwen3-VL-4B-Instruct` | 摘要模型本地路径；如果不存在，请先下载。 |
 | `ADAPTER_PORT` | `8070` | 适配器监听端口。 |

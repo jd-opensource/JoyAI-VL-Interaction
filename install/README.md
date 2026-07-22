@@ -9,7 +9,7 @@ Unless stated otherwise, run the commands below from the repository root.
 
 All default model weight paths are under `/tmp/models/<model-name>`. The current defaults are:
 
-- Main interaction model: `/tmp/models/JoyAI-VL-Interaction-Preview`, default repo `jdopensource/JoyAI-VL-Interaction-Preview`
+- Main interaction model: `/tmp/models/jdopensource/JoyAI-VL-Interaction`, default repo `jdopensource/JoyAI-VL-Interaction`
 - Summary model: `/tmp/models/Qwen3-VL-4B-Instruct`, default repo `Qwen/Qwen3-VL-4B-Instruct`
 - ASR model: `/tmp/models/Qwen3-ASR-1.7B`, default repo `Qwen/Qwen3-ASR-1.7B`
 - TTS model: `/tmp/models/Qwen3-TTS-12Hz-1.7B-CustomVoice`, default repo `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`

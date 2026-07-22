@@ -14,7 +14,7 @@
   <a href="https://arxiv.org/pdf/2606.14777"><b>📄 arXiv</b></a> |
   <a href="https://joyai-vl-video-future-academy-jd.github.io/JoyAI-VL-Interaction/"><b>🚀 博客</b></a> |
   <a href="https://github.com/jd-opensource/JoyAI-VL-Interaction"><b>💻 代码</b></a> |
-  <a href="https://huggingface.co/jdopensource/JoyAI-VL-Interaction-Preview"><b>🤗 模型</b></a> |
+  <a href="https://huggingface.co/jdopensource/JoyAI-VL-Interaction"><b>🤗 模型</b></a> |
   <a href="https://huggingface.co/datasets/jdopensource/JoyAI-VL-Interaction"><b>📦 数据集</b></a>
 </p>
 
@@ -40,6 +40,8 @@
 
 ## 🔥 最新动态
 
+- **[2026-07-22]** 🤗 在线 + 离线统一模型 —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解，并可自主选择是否 delegation；主交互模型默认指向 [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction)，下载和部署脚本已同步更新。
+- **[2026-07-21]** 🚀 支持 LiveKit 部署，避免对外开放大量服务端口；可切换到 [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) 分支。
 - **[2026-06-20]** 🎉 完整开源发布，模型权重、可部署系统和技术报告现已开放。
 - **[2026-06-20]** 🚀 [vLLM-Omni](https://github.com/vllm-project/vllm-omni) 提供 day-0 部署支持（[部署指南](https://github.com/vllm-project/vllm-omni/blob/main/recipes/JD/JoyAI-VL-Interaction.md)）。
 - **[2026-06-20]** 🎉 发布对齐交互训练数据。
@@ -186,10 +188,10 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 - [x] 发布技术报告
 - [x] 发布时间对齐交互训练数据
 - [x] 发布 HuggingFace 模型
-- [ ] **在线 + 离线统一模型** —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解
+- [x] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
+- [x] **在线 + 离线统一模型** —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解
 - [ ] **Codec 版本** —— 搭载预测式视频编解码器（AdaCodec）的模型变体，降低长流场景下的 token 开销
 - [ ] **量化版本** —— 实现更轻量、更低成本的部署
-- [x] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
 
 ## 🙏 致谢
 

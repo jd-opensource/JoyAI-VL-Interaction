@@ -14,7 +14,7 @@
   <a href="https://arxiv.org/pdf/2606.14777"><b>📄 arXiv</b></a> |
   <a href="https://joyai-vl-video-future-academy-jd.github.io/JoyAI-VL-Interaction/"><b>🚀 Blog</b></a> |
   <a href="https://github.com/jd-opensource/JoyAI-VL-Interaction"><b>💻 Code</b></a> |
-  <a href="https://huggingface.co/jdopensource/JoyAI-VL-Interaction-Preview"><b>🤗 Model</b></a> |
+  <a href="https://huggingface.co/jdopensource/JoyAI-VL-Interaction"><b>🤗 Model</b></a> |
   <a href="https://huggingface.co/datasets/jdopensource/JoyAI-VL-Interaction"><b>📦 Dataset</b></a>
 </p>
 
@@ -41,6 +41,8 @@
 
 ## 🔥 News
 
+- **[2026-07-22]** 🤗 Unified online + offline model — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding, with the ability to decide whether to delegate; the main interaction model now defaults to [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction), with download and deployment scripts updated accordingly.
+- **[2026-07-21]** 🚀 LiveKit deployment support is available to avoid exposing a large number of service ports; switch to the [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) branch.
 - **[2026-06-20]** 🎉 Full open-source release — model weights, deployable system, and technical report are now available.
 - **[2026-06-20]** 🚀 Day-0 deployment support via [vLLM-Omni](https://github.com/vllm-project/vllm-omni) ([recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/JD/JoyAI-VL-Interaction.md)).
 - **[2026-06-20]** 🎉 Release aligned interaction training data.
@@ -187,10 +189,10 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 - [x] Release technical report
 - [x] Release time-aligned interaction training data
 - [x] HuggingFace model 
-- [ ] **Unified online + offline model** — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding
+- [x] **Unified online + offline model** — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding
+- [x] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
 - [ ] **Codec version** — model variant with the predictive video codec (AdaCodec) for lower token cost over long streams
 - [ ] **Quantized versions** — for lighter, lower-cost deployment
-- [x] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
 
 ## 😊 Community & Support
 

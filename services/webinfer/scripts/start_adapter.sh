@@ -20,7 +20,7 @@ if [[ "${SAVE_SERVICE_LOGS:-0}" == "1" ]]; then
 fi
 
 MAIN_API_BASE="${MAIN_API_BASE:-http://127.0.0.1:7060/v1}"
-MAIN_MODEL="${MAIN_MODEL:-JoyAI-VL-Interaction-Preview}"
+MAIN_MODEL="${MAIN_MODEL:-jdopensource/JoyAI-VL-Interaction}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-${MAIN_MODEL}}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 
