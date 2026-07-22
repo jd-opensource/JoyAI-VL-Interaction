@@ -49,6 +49,8 @@ ASYNC_SUMMARY_LEAD_FRAMES="${ASYNC_SUMMARY_LEAD_FRAMES:-10}"
 
 # ==================== 主 8B 模型采样参数 ====================
 MAIN_MAX_TOKENS="${MAIN_MAX_TOKENS:-256}"
+MAIN_MAX_PROMPT_TURNS="${MAIN_MAX_PROMPT_TURNS:-0}"
+MAIN_MAX_PROMPT_IMAGES="${MAIN_MAX_PROMPT_IMAGES:-0}"
 MAIN_TEMPERATURE="${MAIN_TEMPERATURE:-0.8}"
 MAIN_TOP_P="${MAIN_TOP_P:-0.9}"
 MAIN_TOP_K="${MAIN_TOP_K:-40}"
@@ -94,6 +96,7 @@ echo "  Frame save:    ${FRAME_SAVE_DIR}"
 echo "  Chunk:         ${CHUNK}"
 echo "  Compress N:    ${COMPRESS_EVERY_N_CHUNKS}"
 echo "  Async lead:    ${ASYNC_SUMMARY_LEAD_FRAMES}"
+echo "  Prompt window: turns=${MAIN_MAX_PROMPT_TURNS:-unlimited}, images=${MAIN_MAX_PROMPT_IMAGES:-unlimited} (0=unlimited)"
 echo "  Main sampling: max_tokens=${MAIN_MAX_TOKENS}, temp=${MAIN_TEMPERATURE}, top_p=${MAIN_TOP_P}, top_k=${MAIN_TOP_K}, rep_penalty=${MAIN_REPETITION_PENALTY}"
 if [[ -n "${ADAPTER_LOG_FILE}" ]]; then
     echo "  Log:           ${ADAPTER_LOG_FILE}"
@@ -118,6 +121,8 @@ echo "============================================================"
   --summarizer-key-frames "${SUMMARIZER_KEY_FRAMES}" \
   --summarizer-phase-seconds "${SUMMARIZER_PHASE_SECONDS}" \
   --main-max-tokens "${MAIN_MAX_TOKENS}" \
+  --main-max-prompt-turns "${MAIN_MAX_PROMPT_TURNS}" \
+  --main-max-prompt-images "${MAIN_MAX_PROMPT_IMAGES}" \
   --main-temperature "${MAIN_TEMPERATURE}" \
   --main-top-p "${MAIN_TOP_P}" \
   --main-top-k "${MAIN_TOP_K}" \
