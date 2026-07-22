@@ -86,6 +86,43 @@ class VideoProcessorTrack(VideoStreamTrack):
         self._last_callback_inference_count = 0
         self._last_callback_response = None
 
+    def _notify_text_callback(self) -> None:
+        """Send a completed VLM response once, even if the input video has ended."""
+        if not self.text_callback:
+            return
+
+        response, _ = self.vlm_service.get_current_response()
+        metrics = self.vlm_service.get_metrics()
+        inference_count = int(metrics.get("total_inferences") or 0)
+        has_new_inference = inference_count > self._last_callback_inference_count
+        has_new_response = response != self._last_callback_response
+        if inference_count <= 0 or not (has_new_inference or has_new_response):
+            return
+
+        self._last_callback_inference_count = inference_count
+        self._last_callback_response = response
+        handoff_meta = self.vlm_service.consume_background_handoff_metric()
+        if handoff_meta:
+            metrics = dict(metrics)
+            metrics["background_handoff"] = handoff_meta
+        self.text_callback(response, metrics)
+
+    def _schedule_vlm_task(self, coroutine) -> None:
+        """Notify the browser when a VLM task finishes, without waiting for another frame."""
+        task = asyncio.create_task(coroutine)
+
+        def on_done(completed_task) -> None:
+            if completed_task.cancelled():
+                return
+            try:
+                completed_task.result()
+            except Exception:
+                logger.error("VLM frame task failed", exc_info=True)
+                return
+            self._notify_text_callback()
+
+        task.add_done_callback(on_done)
+
     async def recv(self):
         """
         Receive frame from input track, process it, and return with text overlay
@@ -210,7 +247,7 @@ class VideoProcessorTrack(VideoStreamTrack):
                             wall_time=now,
                         )
                     if need_conversion:
-                        asyncio.create_task(
+                        self._schedule_vlm_task(
                             self.vlm_service.process_frame(
                                 pil_img,
                                 frame_timing_ms=frame_timing_ms,
@@ -272,7 +309,7 @@ class VideoProcessorTrack(VideoStreamTrack):
                     if len(self._frame_buffer) >= frames_per_batch:
                         batch = list(self._frame_buffer)
                         self._frame_buffer.clear()
-                        asyncio.create_task(
+                        self._schedule_vlm_task(
                             self.vlm_service.process_frame_batch(batch)
                         )
                         self._last_process_time = now
@@ -281,25 +318,9 @@ class VideoProcessorTrack(VideoStreamTrack):
                             f"(interval={interval_sec}s, batch={frames_per_batch})"
                         )
 
-            # Get current response (may be old if VLM is still processing)
-            response, is_processing = self.vlm_service.get_current_response()
-
-            # Get metrics
-            metrics = self.vlm_service.get_metrics()
-
-            # Send text update via callback (for WebSocket)
-            if self.text_callback:
-                inference_count = int(metrics.get("total_inferences") or 0)
-                has_new_inference = inference_count > self._last_callback_inference_count
-                has_new_response = response != self._last_callback_response
-                if inference_count > 0 and (has_new_inference or has_new_response):
-                    self._last_callback_inference_count = inference_count
-                    self._last_callback_response = response
-                    handoff_meta = self.vlm_service.consume_background_handoff_metric()
-                    if handoff_meta:
-                        metrics = dict(metrics)
-                        metrics["background_handoff"] = handoff_meta
-                    self.text_callback(response, metrics)
+            # Also update promptly during live playback. Completion callbacks above
+            # cover the case where the final request finishes after video EOF.
+            self._notify_text_callback()
 
             # Return original frame directly - zero-copy passthrough!
             # This avoids expensive BGR→YUV conversion

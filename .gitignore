@@ -72,6 +72,8 @@ agent-workspace/
 
 # Local credentials and certificates
 .env
+API.txt
+**/API.txt
 .env.*
 *.pem
 *.key

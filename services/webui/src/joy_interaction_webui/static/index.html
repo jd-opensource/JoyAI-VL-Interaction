@@ -2694,7 +2694,8 @@ limitations under the License.
         #apiKey,
         #modelSelect,
         #cameraSelect,
-        #rtspUrl {
+        #rtspUrl,
+        #localVideoFile {
             transition: all 0.3s ease;
         }
 
@@ -2705,7 +2706,8 @@ limitations under the License.
         #apiBaseUrl:focus,
         #apiKey:focus,
         #modelSelect:focus,
-        #rtspUrl:focus {
+        #rtspUrl:focus,
+        #localVideoFile:focus {
             border-color: rgba(200, 200, 200, 0.6) !important;
             box-shadow: 0 0 0 2px rgba(200, 200, 200, 0.15),
                         0 0 8px rgba(200, 200, 200, 0.2) !important;
@@ -2721,7 +2723,8 @@ limitations under the License.
 
         body.colorful-focus #processEvery:focus,
         body.colorful-focus #cameraSelect:focus,
-        body.colorful-focus #rtspUrl:focus {
+        body.colorful-focus #rtspUrl:focus,
+        body.colorful-focus #localVideoFile:focus {
             border-color: rgb(59, 130, 246) !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3),
                         0 0 12px rgba(59, 130, 246, 0.4) !important;
@@ -2758,7 +2761,8 @@ limitations under the License.
         #modelSelect.applied,
         #systemPromptSelect.applied,
         #cameraSelect.applied,
-        #rtspUrl.applied {
+        #rtspUrl.applied,
+        #localVideoFile.applied {
             animation: settingApplied 0.6s ease-out;
         }
 
@@ -3672,6 +3676,10 @@ limitations under the License.
                             RTSP Stream
                             <span class="beta-badge">BETA</span>
                         </button>
+                        <button class="input-source-tab" data-source="local-video" title="Choose a video file stored on this computer">
+                            <i data-lucide="file-video" style="width: 14px; height: 14px; margin-right: 4px;"></i>
+                            Local Video
+                        </button>
                     </div>
 
                     <!-- Webcam Controls -->
@@ -3705,6 +3713,14 @@ limitations under the License.
                             </div>
                             <input type="text" id="rtspUrl" placeholder="rtsp://192.168.1.100:554/stream" style="margin-bottom: 16px;">
                             <div id="rtspStatus" class="input-hint" style="margin-top: -8px; margin-bottom: 12px; display: none;"></div>
+                        </div>
+                    </div>
+                    <!-- Local Video Controls -->
+                    <div id="localVideoControls" style="display: none;">
+                        <div class="form-group">
+                            <label>Local Video File</label>
+                            <input type="file" id="localVideoFile" accept="video/mp4,video/webm,video/quicktime,video/x-msvideo">
+                            <div id="localVideoStatus" class="input-hint" style="margin-top: 8px;">Choose an MP4, WebM, MOV, or AVI file. The file stays in this browser and is not uploaded to the server.</div>
                         </div>
                     </div>
                     <div class="form-group">
@@ -3773,6 +3789,7 @@ limitations under the License.
                 </div>
 
                 <video id="videoElement" autoplay playsinline muted></video>
+                <video id="localVideoSource" muted playsinline style="display: none;"></video>
                 <div class="video-overlay" id="videoOverlay"></div>
             </div>
 
@@ -3909,6 +3926,7 @@ limitations under the License.
         const themeText = document.getElementById('themeText');
         const jdLogo = document.getElementById('jdLogo');
         const videoElement = document.getElementById('videoElement');
+        const localVideoSource = document.getElementById('localVideoSource');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         const connectionStatus = document.getElementById('connectionStatus');
@@ -3936,6 +3954,8 @@ limitations under the License.
         const refreshModelsBtn = document.getElementById('refreshModelsBtn');
         const processEvery = document.getElementById('processEvery');
         const framesPerBatch = document.getElementById('framesPerBatch');
+        const localVideoFileInput = document.getElementById('localVideoFile');
+        const localVideoStatus = document.getElementById('localVideoStatus');
         const maxLatency = document.getElementById('maxLatency');
         const mirrorBtn = document.getElementById('mirrorBtn');
         const quickCameraBtn = document.getElementById('quickCameraBtn');
@@ -4007,6 +4027,10 @@ limitations under the License.
         let videoDevices = [];
         let preferredCameraFacing = 'environment';
         let rtspSessionId = 'default';  // For RTSP mode
+        let localVideoObjectUrl = null;
+        let localVideoEndedHandler = null;
+        let localVideoFinished = false;
+        let localVideoPlaybackEnded = false;
         // Enable markdown by default (user can disable if they prefer raw text)
         let markdownEnabled = localStorage.getItem('markdownEnabled') !== 'false';
 
@@ -4175,14 +4199,14 @@ limitations under the License.
             }
         });
 
-        // Handle input source tabs (Webcam vs RTSP)
+        // Handle input source tabs (Webcam, RTSP, or a browser-local video file)
         document.querySelectorAll('.input-source-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const source = tab.getAttribute('data-source');
                 const webcamControls = document.getElementById('webcamControls');
                 const rtspControls = document.getElementById('rtspControls');
+                const localVideoControls = document.getElementById('localVideoControls');
                 const rtspBetaWarning = document.getElementById('rtspBetaWarning');
-                const startBtn = document.getElementById('startBtn');
 
                 // Update active tab
                 document.querySelectorAll('.input-source-tab').forEach(t => t.classList.remove('active'));
@@ -4192,13 +4216,32 @@ limitations under the License.
                 if (source === 'webcam') {
                     webcamControls.style.display = 'block';
                     rtspControls.style.display = 'none';
+                    localVideoControls.style.display = 'none';
                     rtspBetaWarning.style.display = 'none';
                 } else if (source === 'rtsp') {
                     webcamControls.style.display = 'none';
                     rtspControls.style.display = 'block';
+                    localVideoControls.style.display = 'none';
                     rtspBetaWarning.style.display = 'flex';
+                } else if (source === 'local-video') {
+                    webcamControls.style.display = 'none';
+                    rtspControls.style.display = 'none';
+                    localVideoControls.style.display = 'block';
+                    rtspBetaWarning.style.display = 'none';
                 }
+                updatePromptAvailability();
             });
+        });
+
+        localVideoFileInput.addEventListener('change', () => {
+            const file = localVideoFileInput.files && localVideoFileInput.files[0];
+            if (!file) {
+                localVideoStatus.textContent = 'Choose an MP4, WebM, MOV, or AVI file. The file stays in this browser and is not uploaded to the server.';
+                return;
+            }
+            localVideoStatus.textContent = `Selected: ${file.name}`;
+            localVideoFileInput.classList.add('applied');
+            setTimeout(() => localVideoFileInput.classList.remove('applied'), 600);
         });
 
         // Clear RTSP status message when user types
@@ -6991,14 +7034,28 @@ limitations under the License.
             connectionStatus.className = `status-badge ${state}`;
         }
 
+        function getActiveInputSource() {
+            return document.querySelector('.input-source-tab.active')?.getAttribute('data-source') || 'webcam';
+        }
+
         function updatePromptAvailability() {
-            const canSendPrompt = Boolean(isAnalysisRunning);
+            const isLocalVideo = getActiveInputSource() === 'local-video';
+            const canSendPrompt = Boolean(isAnalysisRunning || isLocalVideo);
             promptSendBtn.disabled = !canSendPrompt;
             speechButtons.forEach(button => {
                 button.disabled = isSpeechActive() ? false : !canSendPrompt;
             });
-            promptText.placeholder = canSendPrompt ? 'Message the VLM...' : 'Start the video to send a message';
-            promptSendBtn.title = canSendPrompt ? 'Send prompt' : 'Start the video to send';
+            if (isLocalVideo) {
+                promptText.placeholder = localVideoPlaybackEnded
+                    ? 'Ask about the completed video...'
+                    : 'Set a task for the whole video...';
+                promptSendBtn.title = localVideoPlaybackEnded
+                    ? 'Ask about completed video'
+                    : 'Set video task';
+            } else {
+                promptText.placeholder = canSendPrompt ? 'Message the VLM...' : 'Start the video to send a message';
+                promptSendBtn.title = canSendPrompt ? 'Send prompt' : 'Start the video to send';
+            }
             syncSpeechButtons();
 
             processEvery.disabled = isAnalysisRunning;
@@ -7210,7 +7267,8 @@ limitations under the License.
 
         // Helper function to apply prompt settings
         function applyPromptSettings() {
-            if (!isAnalysisRunning) {
+            const isLocalVideo = getActiveInputSource() === 'local-video';
+            if (!isAnalysisRunning && !isLocalVideo) {
                 updateStatus('请先开始视频', 'disconnected');
                 updatePromptAvailability();
                 return false;
@@ -7226,13 +7284,21 @@ limitations under the License.
             }
 
             if (websocket && websocket.readyState === WebSocket.OPEN) {
-                websocket.send(JSON.stringify({
-                    type: 'update_prompt',
-                    prompt: newPrompt
-                }));
+                if (isLocalVideo) {
+                    websocket.send(JSON.stringify(
+                        localVideoPlaybackEnded
+                            ? { type: 'ask_video_question', question: newPrompt }
+                            : { type: 'set_video_task', task: newPrompt }
+                    ));
+                } else {
+                    websocket.send(JSON.stringify({
+                        type: 'update_prompt',
+                        prompt: newPrompt
+                    }));
+                }
             }
 
-            // Clear input after applying (one-shot mode)
+            // Clear input after applying either a persistent local-video task or a question.
             promptText.value = '';
             resizePromptInput();
             return true;
@@ -8206,6 +8272,24 @@ limitations under the License.
                             console.groupEnd();
                         }
                     }
+
+                    // A local file can end before its last cloud inference returns.
+                    // Keep this session alive until that response is rendered, then
+                    // restore the start control without clearing the visible result.
+                    if (localVideoFinished && getActiveInputSource() === 'local-video') {
+                        localVideoFinished = false;
+                        isAnalysisRunning = false;
+                        isStreamStarting = false;
+                        resetVideoButtons();
+                        updatePromptAvailability();
+                        updateStatus('Local video completed', 'connected');
+                        localVideoStatus.textContent = 'Video completed. The final analysis is shown on the right.';
+                    }
+                } else if (data.type === 'video_question_answer') {
+                    if (data.text) {
+                        updateResultText(data.text);
+                        lastText = data.text;
+                    }
                 } else if (data.type === 'status') {
                     // Don't show status messages in result balloon (too flashy)
                     // Status is already shown in the header
@@ -8358,7 +8442,7 @@ limitations under the License.
             }
         }
 
-        // Start - dispatch to webcam or RTSP based on active tab
+        // Start - dispatch to webcam, RTSP, or a browser-local video file.
         async function start() {
             streamStartToken += 1;
             const token = streamStartToken;
@@ -8400,43 +8484,28 @@ limitations under the License.
                 await startWebcam(token);
             } else if (inputSource === 'rtsp') {
                 await startRTSP(token);
+            } else if (inputSource === 'local-video') {
+                revealVideoAfterMetricsToken = token;
+                await startLocalVideo(token);
             }
 
         }
 
-        // Start WebRTC (Webcam mode)
-        async function startWebcam(token) {
+        async function startWebRtcWithLocalStream(stream, token, sourceLabel) {
             try {
                 if (!websocket || websocket.readyState !== WebSocket.OPEN) {
                     connectWebSocket();
                 }
 
-                updateStatus('Requesting camera...', 'processing');
-
-                // Use selected camera or default
-                const videoConstraints = {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                };
-
-                if (selectedCameraId) {
-                    videoConstraints.deviceId = { exact: selectedCameraId };
-                }
-
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: videoConstraints,
-                    audio: false
-                });
-
                 updateStatus('Connecting...', 'processing');
-                showProcessedVideoStream(localStream, token);
+                showProcessedVideoStream(stream, token);
 
                 peerConnection = new RTCPeerConnection({
                     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
                 });
 
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
+                stream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, stream);
                 });
 
                 peerConnection.ontrack = (event) => {
@@ -8472,6 +8541,7 @@ limitations under the License.
                         sdp: peerConnection.localDescription.sdp,
                         type: peerConnection.localDescription.type,
                         session_id: sessionId,
+                        source: sourceLabel,
                     }),
                 });
 
@@ -8479,7 +8549,107 @@ limitations under the License.
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 
             } catch (error) {
-                console.error('Error starting webcam:', error);
+                console.error(`Error starting ${sourceLabel}:`, error);
+                updateStatus(`Error: ${error.message}`, 'disconnected');
+                setVideoWaitingForStream(false);
+                stop();
+            }
+        }
+
+        // Start WebRTC with a browser webcam stream.
+        async function startWebcam(token) {
+            try {
+                updateStatus('Requesting camera...', 'processing');
+
+                const videoConstraints = {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                };
+                if (selectedCameraId) {
+                    videoConstraints.deviceId = { exact: selectedCameraId };
+                }
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: videoConstraints,
+                    audio: false
+                });
+                await startWebRtcWithLocalStream(localStream, token, 'webcam');
+            } catch (error) {
+                console.error('Error requesting webcam:', error);
+                updateStatus(`Error: ${error.message}`, 'disconnected');
+                setVideoWaitingForStream(false);
+                stop();
+            }
+        }
+
+        function waitForVideoEvent(video, eventName) {
+            return new Promise((resolve, reject) => {
+                const onSuccess = () => {
+                    cleanup();
+                    resolve();
+                };
+                const onError = () => {
+                    cleanup();
+                    reject(new Error('The selected video cannot be played by this browser.'));
+                };
+                const cleanup = () => {
+                    video.removeEventListener(eventName, onSuccess);
+                    video.removeEventListener('error', onError);
+                };
+                video.addEventListener(eventName, onSuccess, { once: true });
+                video.addEventListener('error', onError, { once: true });
+            });
+        }
+
+        // Play a local file in a hidden video element and send its video track through WebRTC.
+        async function startLocalVideo(token) {
+            try {
+                const file = localVideoFileInput.files && localVideoFileInput.files[0];
+                if (!file) {
+                    throw new Error('Please choose a local video file first.');
+                }
+                const captureStream = localVideoSource.captureStream || localVideoSource.mozCaptureStream;
+                if (typeof captureStream !== 'function') {
+                    throw new Error('This browser does not support local video capture. Please use a current Chrome or Edge browser.');
+                }
+
+                updateStatus('Loading local video...', 'processing');
+                localVideoFinished = false;
+                localVideoPlaybackEnded = false;
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({ type: 'start_video_analysis' }));
+                }
+                if (localVideoObjectUrl) {
+                    URL.revokeObjectURL(localVideoObjectUrl);
+                }
+                localVideoObjectUrl = URL.createObjectURL(file);
+                localVideoSource.srcObject = null;
+                localVideoSource.src = localVideoObjectUrl;
+                localVideoSource.currentTime = 0;
+                await waitForVideoEvent(localVideoSource, 'loadedmetadata');
+
+                localStream = captureStream.call(localVideoSource);
+                if (!localStream || localStream.getVideoTracks().length === 0) {
+                    throw new Error('No video track was created from the selected file.');
+                }
+                localVideoEndedHandler = () => {
+                    if (token === streamStartToken) {
+                        // Do not call stop() here. stop() resets and cleans the
+                        // server session, which can discard a still-running VLM call.
+                        localVideoFinished = true;
+                        localVideoPlaybackEnded = true;
+                        updateStatus('Video finished; waiting for final analysis...', 'processing');
+                        localVideoStatus.textContent = 'Video finished. Waiting for the final cloud analysis...';
+                    }
+                };
+                localVideoSource.addEventListener('ended', localVideoEndedHandler, { once: true });
+                await startWebRtcWithLocalStream(localStream, token, 'local video');
+                // Begin from 0 only after the WebRTC offer/answer is ready. This
+                // prevents a short local file from ending before the server can
+                // receive its first frame.
+                await localVideoSource.play();
+            } catch (error) {
+                console.error('Error starting local video:', error);
+                localVideoStatus.textContent = `Unable to start local video: ${error.message}`;
                 updateStatus(`Error: ${error.message}`, 'disconnected');
                 setVideoWaitingForStream(false);
                 stop();
@@ -8632,6 +8802,20 @@ limitations under the License.
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
+            }
+
+            if (localVideoEndedHandler) {
+                localVideoSource.removeEventListener('ended', localVideoEndedHandler);
+                localVideoEndedHandler = null;
+            }
+            localVideoFinished = false;
+            localVideoPlaybackEnded = false;
+            localVideoSource.pause();
+            localVideoSource.removeAttribute('src');
+            localVideoSource.load();
+            if (localVideoObjectUrl) {
+                URL.revokeObjectURL(localVideoObjectUrl);
+                localVideoObjectUrl = null;
             }
 
             // Close WebRTC peer connection (used by both webcam and RTSP)

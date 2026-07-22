@@ -4,6 +4,23 @@
 
 ## 前置条件
 
+### 百炼视觉 API 最小模式（Windows）
+
+百炼模式不需要 NVIDIA GPU、CUDA、vLLM、本地模型权重或 `services/webinfer`。在已有 Conda 环境 `joyai` 中运行：
+
+```powershell
+conda activate joyai
+Set-Location "D:/Study/job/2026/PKU/JoyAI/JoyAI-VL-Interaction/services/webui"
+python -m pip install -e .
+$env:VLM_PROVIDER = "bailian"
+$env:PYTHONPATH = "src"
+python -m joy_interaction_webui.server --host 0.0.0.0 --port 8099
+```
+
+默认模型为 `qwen3.7-plus`，端点为项目配置的百炼兼容端点。Key 优先从 `OPENAI_API_KEY` 读取，否则从仓库外 `D:/Study/job/2026/PKU/JoyAI/API.txt` 的首个 `sk-` 开头行读取。不要使用 `services/scripts/run.sh minimal`，它会启动仅供 `local` 模式使用的 `webinfer`。
+
+### 原始本地模式（Linux + NVIDIA GPU）
+
 - 带 NVIDIA GPU 的 Linux（已在 NVIDIA Hopper 系列显卡上完成测试）
 - CUDA 12.x + NVIDIA driver 535+
 - Python 3.12（推荐）

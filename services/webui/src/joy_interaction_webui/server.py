@@ -40,6 +40,15 @@ from aiortc import (
 )
 from aiortc.contrib.media import MediaRelay
 
+from .bailian_config import (
+    BAILIAN_API_BASE,
+    BAILIAN_MODEL,
+    BAILIAN_MODELS,
+    BAILIAN_PROVIDER,
+    LOCAL_PROVIDER,
+    load_bailian_api_key,
+    resolve_provider,
+)
 from .vlm_service import SYSTEM_PROMPT_DEFAULT_KEY, VLMService
 from .video_processor import VideoProcessorTrack
 from .rtsp_track import RTSPVideoTrack
@@ -126,18 +135,26 @@ def get_or_create_session(session_id: str):
                 prompt=cfg.get("prompt") or None,
                 session_id=session_id,
                 system_prompt_key=cfg.get("system_prompt_key", SYSTEM_PROMPT_DEFAULT_KEY),
+                provider=cfg.get("provider", BAILIAN_PROVIDER),
             ),
-            "background_service": BackgroundModelService(
-                session_id=session_id,
-                notify_callback=lambda payload, sid=session_id: notify_session_json(sid, payload),
-                summarizer_api_base=cfg.get("api_base", "http://localhost:8000/v1"),
-            ),
+            "background_service": _create_background_service(session_id, cfg),
             "show_request_payload": False,
             "show_response_payload": False,
             "show_memory_state": False,
         }
         logger.info(f"Created new session: {session_id}")
     return sessions[session_id]
+
+
+def _create_background_service(session_id: str, config: dict):
+    """Create the local-only background service when the selected provider supports it."""
+    if config.get("provider") != LOCAL_PROVIDER:
+        return None
+    return BackgroundModelService(
+        session_id=session_id,
+        notify_callback=lambda payload, sid=session_id: notify_session_json(sid, payload),
+        summarizer_api_base=config.get("api_base", "http://localhost:8000/v1"),
+    )
 
 
 def send_to_session(session_id: str, message: str):
@@ -177,7 +194,7 @@ def get_session_callback(session_id: str):
                     except (TypeError, ValueError):
                         out["response_payload"] = payload
             resp = svc.get_last_response_payload()
-            if resp and isinstance(resp, dict):
+            if svc.provider == LOCAL_PROVIDER and resp and isinstance(resp, dict):
                 sh = resp.get("streamingharness", {})
                 memory = sh.get("memory") if isinstance(sh, dict) else None
                 if memory:
@@ -191,6 +208,28 @@ def get_session_callback(session_id: str):
         send_to_session(session_id, json.dumps(out, ensure_ascii=False))
 
     return callback
+
+
+async def answer_video_question_for_session(session_id: str, question: str) -> None:
+    """Answer a completed-local-video question using that session's retained observations."""
+    session = sessions.get(session_id)
+    svc = session.get("vlm_service") if session else None
+    if svc is None:
+        return
+
+    answer = await svc.answer_video_question(question)
+    send_to_session(
+        session_id,
+        json.dumps(
+            {
+                "type": "video_question_answer",
+                "question": question,
+                "text": answer,
+                "observation_count": len(svc.video_observations),
+            },
+            ensure_ascii=False,
+        ),
+    )
 
 
 async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
@@ -228,7 +267,7 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
     if session and session.get("vlm_service"):
         svc = session["vlm_service"]
         cancelled = await svc.cancel_active_requests()
-        if reset_adapter:
+        if reset_adapter and svc.provider == LOCAL_PROVIDER:
             await svc.reset_adapter_session()
         await svc.close(cancel_requests=False)
     if session and session.get("background_service"):
@@ -350,13 +389,28 @@ async def detect_local_service_and_model():
 
 async def index(request):
     """Serve the main HTML page"""
-    content = open(os.path.join(os.path.dirname(__file__), "static", "index.html"), "r").read()
+    index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    with open(index_path, "r", encoding="utf-8") as index_file:
+        content = index_file.read()
     return web.Response(content_type="text/html", text=content)
 
 
 async def models(request):
     """Return available models from the VLM API"""
     try:
+        default_svc = get_or_create_session("default")["vlm_service"]
+        if default_svc.provider == BAILIAN_PROVIDER:
+            models_list = [
+                {
+                    "id": model_name,
+                    "name": model_name,
+                    "current": model_name == default_svc.model,
+                }
+                for model_name in BAILIAN_MODELS
+            ]
+            return web.Response(
+                content_type="application/json", text=json.dumps({"models": models_list})
+            )
         # Check if custom API base and key are provided in query params
         api_base = request.rel_url.query.get("api_base")
         api_key = request.rel_url.query.get("api_key")
@@ -376,7 +430,6 @@ async def models(request):
             )
         else:
             # Use default session's VLM service (backwards compat when no api_base in query)
-            default_svc = get_or_create_session("default")["vlm_service"]
             models_response = await default_svc.client.models.list()
             models_list = [
                 {"id": model.id, "name": model.id, "current": model.id == default_svc.model}
@@ -521,6 +574,38 @@ async def websocket_handler(request):
                                 }
                             )
 
+                    elif data.get("type") == "set_video_task":
+                        task = data.get("task", "").strip()
+                        if svc:
+                            task = svc.update_video_task(task)
+                            await ws.send_json(
+                                {
+                                    "type": "video_task_updated",
+                                    "task": task,
+                                }
+                            )
+
+                    elif data.get("type") == "start_video_analysis":
+                        if svc:
+                            svc.begin_video_analysis()
+                            await ws.send_json({"type": "video_analysis_started"})
+
+                    elif data.get("type") == "ask_video_question":
+                        question = data.get("question", "").strip()
+                        if question:
+                            asyncio.create_task(
+                                answer_video_question_for_session(session_id, question)
+                            )
+                        else:
+                            await ws.send_json(
+                                {
+                                    "type": "video_question_answer",
+                                    "question": "",
+                                    "text": "请输入与已分析视频有关的问题。",
+                                    "observation_count": 0,
+                                }
+                            )
+
                     elif data.get("type") == "update_system_prompt":
                         if svc:
                             system_prompt_key = svc.update_system_prompt_key(
@@ -539,6 +624,14 @@ async def websocket_handler(request):
                         api_key = data.get("api_key", "").strip()
 
                         if new_model and svc:
+                            if svc.provider == BAILIAN_PROVIDER and new_model not in BAILIAN_MODELS:
+                                await ws.send_json(
+                                    {
+                                        "type": "model_update_error",
+                                        "error": "当前百炼模式只允许选择已配置的视觉模型。",
+                                    }
+                                )
+                                continue
                             svc.model = new_model
                             if api_base:
                                 svc.update_api_settings(api_base, api_key if api_key else None)
@@ -692,8 +785,11 @@ async def websocket_handler(request):
                         )
 
                     elif data.get("type") == "reset_session":
-                        logger.info(f"[{session_id}] Client requested adapter session reset")
-                        asyncio.create_task(svc.reset_adapter_session())
+                        if svc.provider == LOCAL_PROVIDER:
+                            logger.info(f"[{session_id}] Client requested adapter session reset")
+                            asyncio.create_task(svc.reset_adapter_session())
+                        else:
+                            logger.info(f"[{session_id}] Client requested Bailian session reset (local reset skipped)")
 
                     elif data.get("type") == "cleanup_session":
                         logger.info(f"[{session_id}] Client requested session cleanup")
@@ -771,9 +867,12 @@ async def offer(request):
     offer_sdp = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
     rtsp_url = params.get("rtsp_url")  # Optional RTSP URL for IP camera mode
     session_id = params.get("session_id", "default")
+    source = params.get("source", "")
 
     session = get_or_create_session(session_id)
     session_vlm = session["vlm_service"]
+    if source == "local video":
+        session_vlm.begin_video_analysis()
     background_service = session.get("background_service")
     session_callback = get_session_callback(session_id)
 
@@ -1300,6 +1399,12 @@ def main():
         help="API key - use 'EMPTY' for local servers, required for NVIDIA NGC/OpenAI (default: EMPTY)",
     )
     parser.add_argument(
+        "--provider",
+        default=os.environ.get("VLM_PROVIDER", BAILIAN_PROVIDER),
+        choices=[BAILIAN_PROVIDER, LOCAL_PROVIDER],
+        help="VLM provider (default: bailian; local preserves the webinfer workflow)",
+    )
+    parser.add_argument(
         "--prompt",
         default="",
         help="Initial prompt to send to VLM (default: empty, waits for user input)",
@@ -1359,12 +1464,18 @@ def main():
         config_dir = get_app_config_dir()
         args.ssl_key = str(config_dir / "key.pem")
 
-    # Auto-detect service and model if not specified
+    provider = resolve_provider(args.provider)
     api_base = args.api_base
     model = args.model
     api_key = args.api_key
 
-    if not model or not api_base:
+    if provider == BAILIAN_PROVIDER:
+        if args.api_base or args.model or args.api_key != "EMPTY":
+            logger.info("Bailian startup uses the configured default model, endpoint, and local credential source")
+        api_base = BAILIAN_API_BASE
+        model = BAILIAN_MODEL
+        api_key = load_bailian_api_key()
+    elif not model or not api_base:
         logger.info("No model/API specified, auto-detecting local services...")
         detected_api_base, detected_model = asyncio.run(detect_local_service_and_model())
 
@@ -1393,31 +1504,35 @@ def main():
 
     # Initialize VLM service and default session for multi-session support
     global vlm_service, default_vlm_config
-    vlm_service = VLMService(model=model, api_base=api_base, api_key=api_key, prompt=args.prompt)
+    vlm_service = VLMService(
+        model=model,
+        api_base=api_base,
+        api_key=api_key,
+        prompt=args.prompt,
+        provider=provider,
+    )
     default_vlm_config = {
         "model": model,
         "api_base": api_base,
         "api_key": api_key,
         "prompt": args.prompt,
         "system_prompt_key": vlm_service.system_prompt_key,
+        "provider": provider,
     }
     sessions["default"] = {
         "vlm_service": vlm_service,
-        "background_service": BackgroundModelService(
-            session_id="default",
-            notify_callback=lambda payload: notify_session_json("default", payload),
-            summarizer_api_base=api_base,
-        ),
+        "background_service": _create_background_service("default", default_vlm_config),
         "show_request_payload": False,
         "show_response_payload": False,
         "show_memory_state": False,
     }
 
     # Log initialization with better formatting
-    service_name = "Local" if "localhost" in api_base or "127.0.0.1" in api_base else "Cloud"
+    service_name = "Local" if provider == LOCAL_PROVIDER else "Bailian"
     logger.info("Initialized VLM service:")
     logger.info(f"  Model: {model}")
     logger.info(f"  API: {api_base} ({service_name})")
+    logger.info(f"  Provider: {provider}")
     logger.info(f"  Prompt: {args.prompt}")
 
     # Update frame processing rate in VideoProcessorTrack if needed

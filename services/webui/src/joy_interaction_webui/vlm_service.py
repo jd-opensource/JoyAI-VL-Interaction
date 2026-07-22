@@ -26,10 +26,12 @@ import json
 import math
 import re
 import time
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI
 from PIL import Image
 from typing import Optional
 import logging
+
+from .bailian_config import BAILIAN_PROVIDER, LOCAL_PROVIDER, resolve_provider
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,12 @@ SYSTEM_PROMPT_OPTIONS = (
     },
 )
 _VALID_SYSTEM_PROMPT_KEYS = {option["key"] for option in SYSTEM_PROMPT_OPTIONS}
+BAILIAN_DEFAULT_PROMPT = (
+    "请用中文简洁描述画面中可见的场景、人物、动作、队列、点单、制作、取餐和明显异常；"
+    "仅依据画面，不要编造画面外事实。"
+)
+MAX_VIDEO_OBSERVATIONS = 120
+MAX_VIDEO_CONTEXT_CHARS = 18000
 
 
 def _format_seconds_words(value: float) -> str:
@@ -74,7 +82,9 @@ class VLMService:
         max_tokens: int = 512,
         session_id: str = "default",
         system_prompt_key: str = SYSTEM_PROMPT_DEFAULT_KEY,
+        provider: str = BAILIAN_PROVIDER,
     ):
+        self.provider = resolve_provider(provider)
         self.model = model
         self.api_base = api_base
         self.api_key = api_key if api_key else "EMPTY"
@@ -93,6 +103,8 @@ class VLMService:
         self.last_latency_breakdown_ms = {}
         self.last_frame_timing_ms = {}
         self.last_user_prompt = ""
+        self.video_task = ""
+        self.video_observations: list[dict[str, str | float | int]] = []
         self._pending_background_handoff: Optional[dict] = None
         self._last_background_handoff_meta: Optional[dict] = None
         self._timestamp_turn_count = 0
@@ -115,11 +127,112 @@ class VLMService:
         )
         return self.system_prompt_key
 
+    def update_video_task(self, task: Optional[str]) -> str:
+        """Store a task that is included in every subsequent video-frame request."""
+        self.video_task = str(task or "").strip()
+        return self.video_task
+
+    def begin_video_analysis(self) -> None:
+        """Discard observations from a previous local video while preserving its task."""
+        self.video_observations.clear()
+
+    def _record_video_observation(
+        self,
+        frame_metadata: Optional[dict],
+        response: str,
+        *,
+        frame_count: int = 1,
+    ) -> None:
+        text = str(response or "").strip()
+        if not text:
+            return
+
+        metadata = frame_metadata or {}
+        timestamp = metadata.get("source_timestamp", metadata.get("timestamp"))
+        try:
+            timestamp = float(timestamp)
+        except (TypeError, ValueError):
+            timestamp = -1.0
+
+        self.video_observations.append(
+            {
+                "timestamp": timestamp,
+                "frame_count": int(frame_count),
+                "text": text,
+            }
+        )
+        if len(self.video_observations) > MAX_VIDEO_OBSERVATIONS:
+            del self.video_observations[: len(self.video_observations) - MAX_VIDEO_OBSERVATIONS]
+
+    def _video_observation_context(self) -> str:
+        """Format retained frame observations for a text-only follow-up request."""
+        if not self.video_observations:
+            return ""
+
+        lines: list[str] = []
+        used_chars = 0
+        for observation in reversed(self.video_observations):
+            timestamp = observation.get("timestamp", -1.0)
+            time_label = (
+                f"{float(timestamp):.1f} 秒"
+                if isinstance(timestamp, (int, float)) and float(timestamp) >= 0
+                else "时间未知"
+            )
+            frame_count = int(observation.get("frame_count", 1))
+            text = str(observation.get("text", "")).strip()
+            line = f"[{time_label}，{frame_count} 帧] {text}"
+            if lines and used_chars + len(line) > MAX_VIDEO_CONTEXT_CHARS:
+                break
+            lines.append(line)
+            used_chars += len(line)
+
+        return "\n".join(reversed(lines))
+
+    async def answer_video_question(self, question: str) -> str:
+        """Answer a question using retained visual observations from the current video."""
+        question_text = str(question or "").strip()
+        context = self._video_observation_context()
+        if not question_text:
+            return "请输入与已分析视频有关的问题。"
+        if not context:
+            return "尚未保存可用于回答的视频画面记录。请先播放并完成至少一次画面分析。"
+
+        prompt = (
+            "你正在回答关于一段已经播放完的视频的问题。以下是按时间抽帧得到的视觉观察记录，"
+            "并非完整原视频。请只依据这些记录用中文回答；如果记录不足以判断，明确说明“记录不足以判断”，"
+            "不要补充未观察到的事实。\n\n"
+            f"视觉观察记录：\n{context}\n\n"
+            f"用户问题：{question_text}"
+        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+                max_tokens=self.max_tokens,
+                temperature=0.2,
+            )
+            return self._extract_response_text(response)
+        except Exception as error:
+            logger.error("Video question request failed")
+            return self._request_error_message(error)
+
     def _request_extra_headers(self) -> dict[str, str]:
+        if self.provider == BAILIAN_PROVIDER:
+            return {}
         return {
             "x-streaming-session": self.session_id,
             "x-system-prompt-key": self.system_prompt_key,
         }
+
+    def _request_error_message(self, error: Exception) -> str:
+        """Return a safe, user-facing error without exposing API details."""
+        if (
+            self.provider == BAILIAN_PROVIDER
+            and isinstance(error, APIStatusError)
+            and error.status_code in (401, 403)
+        ):
+            return "当前 API Key 无权调用所选百炼模型，请确认套餐或模型权限。"
+        return "视觉请求失败，请检查模型配置或网络连接。"
 
     def _format_frame_time_range(self, frame_metadata: Optional[dict]) -> str:
         if not frame_metadata:
@@ -191,6 +304,8 @@ class VLMService:
         if prompt is None:
             prompt = self.prompt
         prompt_text = (prompt or "").strip()
+        if not prompt_text and self.provider == BAILIAN_PROVIDER:
+            prompt_text = BAILIAN_DEFAULT_PROMPT
         frame_time_range = self._format_frame_time_range(frame_metadata)
 
         try:
@@ -240,8 +355,9 @@ class VLMService:
                 ],
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "system_prompt_key": self.system_prompt_key,
             }
+            if self.provider == LOCAL_PROVIDER:
+                self._last_request_payload["system_prompt_key"] = self.system_prompt_key
             if frame_time_range:
                 self._last_request_payload["frame_time_range"] = frame_time_range
             request_build_end = time.perf_counter()
@@ -253,9 +369,11 @@ class VLMService:
                 "messages": messages,
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "extra_headers": self._request_extra_headers(),
             }
-            if frame_time_range:
+            extra_headers = self._request_extra_headers()
+            if extra_headers:
+                create_kwargs["extra_headers"] = extra_headers
+            if frame_time_range and self.provider == LOCAL_PROVIDER:
                 extra_body = {"frame_time_range": frame_time_range}
                 create_kwargs["extra_body"] = extra_body
             response = await self.client.chat.completions.create(
@@ -310,9 +428,9 @@ class VLMService:
             logger.info(f"VLM response: {result} (latency: {inference_time*1000:.0f}ms)")
             return result
 
-        except Exception as e:
-            logger.error(f"Error analyzing image: {e}")
-            return f"Error: {str(e)}"
+        except Exception as error:
+            logger.error("VLM image analysis failed")
+            return self._request_error_message(error)
 
     def get_last_request_payload(self) -> Optional[dict]:
         return self._last_request_payload
@@ -367,6 +485,8 @@ class VLMService:
         self.last_latency_breakdown_ms = {}
         self.last_frame_timing_ms = {}
         self.last_user_prompt = ""
+        self.video_task = ""
+        self.video_observations.clear()
         self._pending_background_handoff = None
         self._last_background_handoff_meta = None
         self._timestamp_turn_count = 0
@@ -457,6 +577,8 @@ class VLMService:
                         prompt,
                         captured_prompt,
                     )
+                    if self.video_task:
+                        used_prompt = self.video_task
                     self.last_user_prompt = str(used_prompt or "").strip()
                     request_frame_metadata = self._metadata_with_next_turn_timestamp(
                         frame_metadata
@@ -468,8 +590,9 @@ class VLMService:
                     )
                     if self._closed:
                         return
+                    self._record_video_observation(request_frame_metadata, response)
                     self.current_response = response
-                    if captured_prompt and self.prompt == captured_prompt:
+                    if not self.video_task and captured_prompt and self.prompt == captured_prompt:
                         self.prompt = None
                     if consumed_background_handoff:
                         logger.info("Consumed background handoff metadata for session %s", self.session_id)
@@ -487,6 +610,8 @@ class VLMService:
         if prompt is None:
             prompt = self.prompt
         prompt_text = (prompt or "").strip()
+        if not prompt_text and self.provider == BAILIAN_PROVIDER:
+            prompt_text = BAILIAN_DEFAULT_PROMPT
 
         try:
             start_time = time.perf_counter()
@@ -531,9 +656,10 @@ class VLMService:
                 "messages": [{"role": "user", "content": debug_content}],
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "system_prompt_key": self.system_prompt_key,
-                "frame_time_ranges": frame_time_ranges,
             }
+            if self.provider == LOCAL_PROVIDER:
+                self._last_request_payload["system_prompt_key"] = self.system_prompt_key
+                self._last_request_payload["frame_time_ranges"] = frame_time_ranges
 
             api_start = time.perf_counter()
             create_kwargs = {
@@ -541,9 +667,11 @@ class VLMService:
                 "messages": messages,
                 "max_tokens": self.max_tokens,
                 "temperature": 0.7,
-                "extra_headers": self._request_extra_headers(),
             }
-            if frame_time_ranges:
+            extra_headers = self._request_extra_headers()
+            if extra_headers:
+                create_kwargs["extra_headers"] = extra_headers
+            if frame_time_ranges and self.provider == LOCAL_PROVIDER:
                 extra_body = {"frame_time_ranges": frame_time_ranges}
                 create_kwargs["extra_body"] = extra_body
             response = await self.client.chat.completions.create(**create_kwargs)
@@ -573,9 +701,9 @@ class VLMService:
             )
             return result
 
-        except Exception as e:
-            logger.error(f"Error analyzing images batch: {e}")
-            return f"Error: {str(e)}"
+        except Exception as error:
+            logger.error("VLM batch image analysis failed")
+            return self._request_error_message(error)
 
     async def process_frame_batch(
         self,
@@ -604,13 +732,21 @@ class VLMService:
                         prompt,
                         captured_prompt,
                     )
+                    if self.video_task:
+                        used_prompt = self.video_task
                     self.last_user_prompt = str(used_prompt or "").strip()
                     request_frames_data = self._batch_with_next_turn_timestamp(frames_data)
                     response = await self.analyze_images(request_frames_data, used_prompt)
                     if self._closed:
                         return
+                    first_metadata = request_frames_data[0] if request_frames_data else {}
+                    self._record_video_observation(
+                        first_metadata,
+                        response,
+                        frame_count=len(request_frames_data),
+                    )
                     self.current_response = response
-                    if captured_prompt and self.prompt == captured_prompt:
+                    if not self.video_task and captured_prompt and self.prompt == captured_prompt:
                         self.prompt = None
                     if consumed_background_handoff:
                         logger.info("Consumed background handoff metadata for session %s", self.session_id)
@@ -786,15 +922,13 @@ class VLMService:
 
         self.client = AsyncOpenAI(base_url=self.api_base, api_key=self.api_key)
 
-        masked_key = (
-            "***" + self.api_key[-4:]
-            if self.api_key and len(self.api_key) > 4 and self.api_key != "EMPTY"
-            else "EMPTY"
-        )
-        logger.info(f"Updated API settings - base: {self.api_base}, key: {masked_key}")
+        logger.info("Updated API settings - base: %s", self.api_base)
 
     async def reset_adapter_session(self) -> bool:
         """Call the adapter's /v1/streaming/reset to flush session outputs."""
+        if self.provider == BAILIAN_PROVIDER:
+            logger.debug("Skipping local adapter reset for Bailian provider")
+            return True
         import aiohttp
 
         reset_url = self.api_base.rstrip("/").removesuffix("/v1") + "/v1/streaming/reset"

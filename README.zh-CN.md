@@ -69,11 +69,28 @@
 
 ## 🚀 快速开始
 
+### 百炼视觉 API（Windows 最小模式）
+
+此模式默认使用阿里云百炼 `qwen3.7-plus`，只启动 WebUI，不启动 `webinfer`、vLLM 或任何本地模型。API Key 必须保留在仓库外的 `D:/Study/job/2026/PKU/JoyAI/API.txt`，或通过 `OPENAI_API_KEY` 提供；不要将 Key 写入仓库。
+
+```powershell
+conda activate joyai
+Set-Location "D:/Study/job/2026/PKU/JoyAI/JoyAI-VL-Interaction/services/webui"
+python -m pip install -e .
+$env:VLM_PROVIDER = "bailian"
+$env:PYTHONPATH = "src"
+python -m joy_interaction_webui.server --host 0.0.0.0 --port 8099
+```
+
+在浏览器打开 `https://localhost:8099`，接受本地自签名证书后允许摄像头。百炼模式会在结果中返回中文画面理解文本。
+
+### 原始本地模式
+
 ```bash
 git clone https://github.com/jd-opensource/JoyAI-VL-Interaction.git
 cd JoyAI-VL-Interaction
 
-# 安装依赖
+# 安装依赖（Linux + NVIDIA GPU）
 ./install/install.sh --with-all
 
 # 下载所有模型权重
