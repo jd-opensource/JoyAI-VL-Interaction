@@ -155,7 +155,7 @@ We evaluate JoyAI-VL-Interaction in **58 real, event-driven visual interaction s
 
 Across **26 standard video understanding benchmarks**, JoyAI-VL-Interaction achieves an average score of **57.53**, outperforming [Qwen3-VL-8B-Instruct](https://github.com/QwenLM/Qwen3-VL) at **54.16** by **3.37 points**.
 
-![JoyAI-VL-Interaction and Qwen3-VL-8B-Instruct benchmark comparison](img/benchmark_table.png)
+<img src="img/benchmark_table.png" alt="JoyAI-VL-Interaction and Qwen3-VL-8B-Instruct benchmark comparison" width="600">
 
 ## 🚧 Limitations and Future Work
 
