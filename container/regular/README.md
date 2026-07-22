@@ -4,7 +4,7 @@
 
 Complete the prerequisites and image build in `../README.md` first.
 
-- Model: BF16 `JoyAI-VL-Interaction-Preview`
+- Model: BF16 `JoyAI-VL-Interaction`
 - Target GPUs: 1 × 32GB main + 3 × 32GB / 3 APIs
 - `MAX_MODEL_LEN=67174` (`65.6 × 1024`, rounded down to an integer)
 - Main GPU allocation: `0.95`

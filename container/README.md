@@ -23,7 +23,7 @@ Expected shared model layout:
 
 ```text
 models/
-├── JoyAI-VL-Interaction-Preview/       # regular only
+├── JoyAI-VL-Interaction/       # regular only
 ├── Qwen3-VL-4B-Instruct/
 ├── Qwen3-ASR-1.7B/
 └── Qwen3-TTS-12Hz-1.7B-CustomVoice/

@@ -9,7 +9,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-all}"
       CUDA_VISIBLE_DEVICES: "${MAIN_GPU:-0}"
-      MODEL_PATH: "${MAIN_MODEL_PATH:-/tmp/models/JoyAI-VL-Interaction-Preview}"
+      MODEL_PATH: "${MAIN_MODEL_PATH:-/tmp/models/JoyAI-VL-Interaction}"
       SERVED_MODEL_NAME: "${SERVED_MODEL_NAME:-joyai-vl-interaction}"
       MAIN_MODEL_PORT: "${MAIN_MODEL_PORT:-7060}"
       MAX_MODEL_LEN: "${MAX_MODEL_LEN:-131072}"

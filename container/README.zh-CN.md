@@ -23,7 +23,7 @@
 
 ```text
 models/
-├── JoyAI-VL-Interaction-Preview/       # 仅 regular 使用
+├── JoyAI-VL-Interaction/       # 仅 regular 使用
 ├── Qwen3-VL-4B-Instruct/
 ├── Qwen3-ASR-1.7B/
 └── Qwen3-TTS-12Hz-1.7B-CustomVoice/

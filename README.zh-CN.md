@@ -150,6 +150,11 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 | 长程视觉记忆  | 77.8%                | 22.2%     | 0.0%     |
 | **总体**  | **87.9%**            | **10.3%** | **1.7%** |
 
+### JoyAI-VL-Interaction vs Qwen3-VL-8B-Instruct
+
+在 **23 个标准视频理解基准**上，JoyAI-VL-Interaction 的平均得分为 **57.53**，相比 [Qwen3-VL-8B-Instruct](https://github.com/QwenLM/Qwen3-VL) 的 **54.16** 提升 **3.37 分**。
+
+![JoyAI-VL-Interaction 与 Qwen3-VL-8B-Instruct 基准对比](img/benchmark_table.png)
 
 ## 🚧 局限与未来工作
 

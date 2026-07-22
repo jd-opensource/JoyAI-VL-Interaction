@@ -4,7 +4,7 @@
 
 请先按照 `../README.zh-CN.md` 完成环境准备和镜像构建。
 
-- 模型：BF16 `JoyAI-VL-Interaction-Preview`
+- 模型：BF16 `JoyAI-VL-Interaction`
 - 目标 GPU：1 × 32GB 主模型 + 3 × 32GB / 3 个 API
 - `MAX_MODEL_LEN=67174`（`65.6 × 1024`，向下取整数）
 - 主模型 GPU 配额：`0.95`
