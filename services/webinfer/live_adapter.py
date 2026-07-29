@@ -469,6 +469,7 @@ def archive_chunk_response_records(
     query_start_time: Optional[str],
     chunk_index: int = 0,
     before_time_sec: float = float("inf"),
+    window: int = 0,
 ) -> None:
     if not current_chunk["response_records"] or not current_query_text:
         return
@@ -504,6 +505,15 @@ def archive_chunk_response_records(
             }
         )
 
+    # Unlike long_term_history, qa_history previously had no eviction at all:
+    # every query/response pair ever seen in the session was kept and resent
+    # in full on every subsequent turn, so a long enough session always
+    # eventually overflows the main model's context window regardless of
+    # max_model_len. Bound it the same way long_term_history is bounded.
+    qa_history = memory_state["qa_history"]
+    if window > 0 and len(qa_history) > window:
+        del qa_history[: len(qa_history) - window]
+
 
 @dataclass
 class AdapterConfig:
@@ -530,6 +540,7 @@ class AdapterConfig:
     use_prompt_as_query: bool = True
     force_silence_before_query: bool = True
     keep_qa_history: bool = True
+    qa_history_window: int = 40
     normalize_output: bool = True
     enable_summarizer: bool = True
     summarizer_model: str = "/tmp/models/Qwen3-VL-4B-Instruct"
@@ -554,6 +565,7 @@ class AdapterConfig:
     long_term_repetition_penalty: float = 1.1
     long_term_presence_penalty: float = 0.0
     long_term_memory_window: int = 40
+    long_term_memory_max_tokens: int = 4000
     request_timeout_seconds: float = 300.0
     session_timeout_seconds: float = 3600.0
     out_dir: Optional[str] = None
@@ -970,6 +982,7 @@ class StreamingInferAdapter:
                 state.current_query_text,
                 state.query_start_time,
                 chunk_index=state.chunk_index,
+                window=self.config.qa_history_window,
             )
         total_time = time.time() - state.session_started_at
         output_path = state.output_path
@@ -1157,6 +1170,7 @@ class StreamingInferAdapter:
                     state.query_start_time,
                     chunk_index=state.chunk_index,
                     before_time_sec=qa_cutoff,
+                    window=self.config.qa_history_window,
                 )
             await self._flush_chunk(state, use_async_summary=self._async_summary_enabled())
             if (
@@ -1489,6 +1503,7 @@ class StreamingInferAdapter:
             old_query,
             old_start_time,
             chunk_index=state.chunk_index,
+            window=self.config.qa_history_window,
         )
         state.current_chunk["response_records"] = []
         state._pending_qa_archive = None
@@ -1780,15 +1795,43 @@ class StreamingInferAdapter:
             long_term_entry["debug_input_path"] = debug_input_path
         state.long_term_history.append(long_term_entry)
 
+        # batch_compress_to_longterm() only appends each new compressed batch
+        # to the existing long_term_memory text and never re-compresses what's
+        # already there (see its docstring), so it grows without bound on its
+        # own. The entry-COUNT window below only limits how many batches are
+        # kept, not their combined size -- with `window` batches each up to
+        # long_term_max_tokens long, the reconstructed text can still be many
+        # times larger than any model's context window once enough batches
+        # accumulate (observed in practice: 5 batches already reached ~11k
+        # tokens). Also enforce a token BUDGET by dropping the oldest batches
+        # until the reconstructed text fits, regardless of entry count.
         window = int(self.config.long_term_memory_window or 0)
-        if window > 0 and len(state.long_term_history) > window:
-            dropped_count = len(state.long_term_history) - window
-            del state.long_term_history[:dropped_count]
-            state.memory_state["long_term_memory"] = "\n\n".join(
+        token_budget = int(self.config.long_term_memory_max_tokens or 0)
+
+        def _rebuild_long_term_memory() -> str:
+            return "\n\n".join(
                 entry["compressed_text"].rstrip()
                 for entry in state.long_term_history
                 if entry.get("compressed_text")
             )
+
+        trimmed = False
+        if window > 0 and len(state.long_term_history) > window:
+            dropped_count = len(state.long_term_history) - window
+            del state.long_term_history[:dropped_count]
+            trimmed = True
+
+        if token_budget > 0:
+            while (
+                len(state.long_term_history) > 1
+                and self.summarizer.estimate_tokens(_rebuild_long_term_memory())
+                > token_budget
+            ):
+                del state.long_term_history[0]
+                trimmed = True
+
+        if trimmed:
+            state.memory_state["long_term_memory"] = _rebuild_long_term_memory()
             token_count = self.summarizer.estimate_tokens(
                 state.memory_state["long_term_memory"]
             )
@@ -2405,6 +2448,14 @@ def parse_args() -> AdapterConfig:
         default=not _env_bool("KEEP_QA_HISTORY", True),
     )
     parser.add_argument(
+        "--qa-history-window",
+        type=int,
+        default=_env_int("QA_HISTORY_WINDOW", 40),
+        help="Max number of query/response entries to retain in qa_history "
+        "(like --long-term-memory-window; 0 disables trimming and restores "
+        "the old unbounded-growth behavior).",
+    )
+    parser.add_argument(
         "--no-normalize-output",
         action="store_true",
         default=not _env_bool("NORMALIZE_OUTPUT", True),
@@ -2528,6 +2579,19 @@ def parse_args() -> AdapterConfig:
         "--long-term-memory-window",
         type=int,
         default=_env_int("LONG_TERM_MEMORY_WINDOW", 40),
+    )
+    parser.add_argument(
+        "--long-term-memory-max-tokens",
+        type=int,
+        default=_env_int("LONG_TERM_MEMORY_MAX_TOKENS", 4000),
+        help="Hard cap (estimated tokens) on the cumulative long_term_memory "
+        "text, enforced by dropping the oldest compressed batches. Unlike "
+        "--long-term-max-tokens (the per-call generation limit) and "
+        "--long-term-memory-window (an entry-COUNT limit), this bounds the "
+        "actual cumulative size: batch_compress_to_longterm() only appends "
+        "each new compressed batch and never re-compresses existing text, so "
+        "a count-based window alone can still leave long_term_memory many "
+        "times larger than any model's context window. Set to 0 to disable.",
     )
     parser.add_argument(
         "--request-timeout-seconds",
@@ -2686,6 +2750,7 @@ def parse_args() -> AdapterConfig:
         use_prompt_as_query=not args.no_prompt_as_query,
         force_silence_before_query=args.force_silence_before_query,
         keep_qa_history=not args.no_qa_history,
+        qa_history_window=args.qa_history_window,
         normalize_output=not args.no_normalize_output,
         enable_summarizer=not args.disable_summarizer,
         summarizer_model=args.summarizer_model,
@@ -2710,6 +2775,7 @@ def parse_args() -> AdapterConfig:
         long_term_repetition_penalty=args.long_term_repetition_penalty,
         long_term_presence_penalty=args.long_term_presence_penalty,
         long_term_memory_window=args.long_term_memory_window,
+        long_term_memory_max_tokens=args.long_term_memory_max_tokens,
         request_timeout_seconds=args.request_timeout_seconds,
         out_dir=out_dir,
         light_out_dir=light_out_dir,
