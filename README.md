@@ -41,6 +41,7 @@
 
 ## 🔥 News
 
+- **[2026-08-03]** 🤗 Quantized JoyAI-VL-Interaction checkpoints are available on Hugging Face: [INT4](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT4), [INT8](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT8), [FP8](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-FP8), and [NVFP4](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-NVFP4).
 - **[2026-07-22]** 🤗 Unified online + offline model — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding, with the ability to decide whether to delegate; the main interaction model now defaults to [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction), with download and deployment scripts updated accordingly.
 - **[2026-07-21]** 🚀 LiveKit deployment support is available to avoid exposing a large number of service ports; switch to the [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) branch.
 - **[2026-06-20]** 🎉 Full open-source release — model weights, deployable system, and technical report are now available.
@@ -69,6 +70,16 @@ We think the next step is a model that's **present like a person**: one that wat
 | 🤖  | **Agent Delegation**             | Hands hard subtasks to a background model, API, or agent while continuing to watch the stream. |
 | 🔓  | **Fully Open Stack**             | Model, data, training recipe, and deployable system — all released for full reproducibility.   |
 
+
+## 🤗 Model Weights
+
+| Variant | Hugging Face repo |
+| --- | --- |
+| Full | [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction) |
+| INT4 | [`jdopensource/JoyAI-VL-Interaction-INT4`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT4) |
+| INT8 | [`jdopensource/JoyAI-VL-Interaction-INT8`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT8) |
+| FP8 | [`jdopensource/JoyAI-VL-Interaction-FP8`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-FP8) |
+| NVFP4 | [`jdopensource/JoyAI-VL-Interaction-NVFP4`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-NVFP4) |
 
 ## 🚀 Quick Start
 
@@ -199,8 +210,8 @@ Across **26 standard video understanding benchmarks**, JoyAI-VL-Interaction achi
 - [x] HuggingFace model 
 - [x] **Unified online + offline model** — a single full-capability model strong at both real-time online (streaming) interaction and offline video understanding
 - [x] **Optimal inference configs** — tuned setups for RTX 3090 / 5090
+- [x] **Quantized versions** — INT4, INT8, FP8, and NVFP4 checkpoints for lighter, lower-cost deployment
 - [ ] **Codec version** — model variant with the predictive video codec (AdaCodec) for lower token cost over long streams
-- [ ] **Quantized versions** — for lighter, lower-cost deployment
 
 ## 😊 Community & Support
 

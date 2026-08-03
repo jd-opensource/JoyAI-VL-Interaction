@@ -41,6 +41,7 @@
 
 ## 🔥 最新动态
 
+- **[2026-08-03]** 🤗 JoyAI-VL-Interaction 量化模型已发布到 Hugging Face：[INT4](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT4)、[INT8](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT8)、[FP8](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-FP8) 和 [NVFP4](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-NVFP4)。
 - **[2026-07-22]** 🤗 在线 + 离线统一模型 —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解，并可自主选择是否 delegation；主交互模型默认指向 [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction)，下载和部署脚本已同步更新。
 - **[2026-07-21]** 🚀 支持 LiveKit 部署，避免对外开放大量服务端口；可切换到 [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) 分支。
 - **[2026-06-20]** 🎉 完整开源发布，模型权重、可部署系统和技术报告现已开放。
@@ -69,6 +70,16 @@
 | 🤖  | **Agent 委托** | 在继续观察视频流的同时，把困难子任务交给后台模型、API 或 agent。 |
 | 🔓  | **完全开放的技术栈** | 模型、数据、训练配方和可部署系统全部开放，便于完整复现。          |
 
+
+## 🤗 模型权重
+
+| 版本 | Hugging Face 仓库 |
+| --- | --- |
+| 完整模型 | [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction) |
+| INT4 | [`jdopensource/JoyAI-VL-Interaction-INT4`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT4) |
+| INT8 | [`jdopensource/JoyAI-VL-Interaction-INT8`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT8) |
+| FP8 | [`jdopensource/JoyAI-VL-Interaction-FP8`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-FP8) |
+| NVFP4 | [`jdopensource/JoyAI-VL-Interaction-NVFP4`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-NVFP4) |
 
 ## 🚀 快速开始
 
@@ -200,8 +211,8 @@ JoyAI-VL-Interaction 的核心，是模型每秒自主做出的一个决策：**
 - [x] 发布 HuggingFace 模型
 - [x] **在线 + 离线统一模型** —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解
 - [x] **最优推理配置** —— 针对 RTX 3090 / 5090 调优的配置方案
+- [x] **量化版本** —— INT4、INT8、FP8 和 NVFP4 权重已发布，可用于更轻量、更低成本的部署
 - [ ] **Codec 版本** —— 搭载预测式视频编解码器（AdaCodec）的模型变体，降低长流场景下的 token 开销
-- [ ] **量化版本** —— 实现更轻量、更低成本的部署
 
 ## 😊 Community & Support
 
