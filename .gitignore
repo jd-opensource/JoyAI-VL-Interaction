@@ -73,6 +73,7 @@ agent-workspace/
 # Local credentials and certificates
 .env
 .env.*
+!container/*/.env.example
 *.pem
 *.key
 *.crt
