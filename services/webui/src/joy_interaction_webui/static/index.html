@@ -19,7 +19,7 @@ limitations under the License.
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JoyAI VL Live</title>
+    <title>JoyAI-VL-Interaction</title>
 
     <!-- Favicons -->
     <link rel="icon" type="image/svg+xml" href="favicon/favicon.svg?v=joyai-red-2">
@@ -123,17 +123,6 @@ limitations under the License.
             display: flex;
             align-items: center;
             gap: 20px;
-        }
-
-        .logo {
-            width: 50px;
-            height: 50px;
-            padding: 5px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.96);
-            box-shadow: 0 8px 22px rgba(80, 0, 6, 0.22);
-            line-height: 0;
-            cursor: pointer;
         }
 
         .title-section h1 {
@@ -2568,19 +2557,6 @@ limitations under the License.
             vertical-align: middle;
         }
 
-        .logo .lucide,
-        .logo svg {
-            width: 100%;
-            height: 100%;
-            filter: none;
-        }
-
-        /* Logo color - theme-aware (subtle glow on light background) */
-        body.light-theme .logo .lucide,
-        body.light-theme .logo svg {
-            filter: none;
-        }
-
         .icon-btn .lucide,
         .settings-btn .lucide,
         .video-control-btn .lucide {
@@ -2863,14 +2839,6 @@ limitations under the License.
             .header-left {
                 min-width: 0;
                 gap: 10px;
-            }
-
-            .logo {
-                width: 38px;
-                height: 38px;
-                padding: 4px;
-                border-radius: 10px;
-                flex: 0 0 auto;
             }
 
             .title-section h1 {
@@ -3328,7 +3296,7 @@ limitations under the License.
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <script>
-        document.title = 'JoyAI VL Live';
+        document.title = 'JoyAI-VL-Interaction';
 
         // Initialize Lucide icons immediately when DOM is ready
         if (document.readyState === 'loading') {
@@ -3342,15 +3310,8 @@ limitations under the License.
     <!-- Header -->
     <div class="header">
         <div class="header-left">
-            <div class="logo" id="jdLogo" role="button" tabindex="0" aria-label="Refresh page">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-hidden="true">
-                    <rect width="128" height="128" rx="28" fill="#c81e2a"/>
-                    <path fill="#fff" d="M25 34h24v38c0 15-9 24-24 24-7 0-13-2-18-5l7-16c3 2 6 3 9 3 5 0 8-3 8-9V52h-6z"/>
-                    <path fill="#fff" d="M60 34h25c22 0 36 12 36 31s-14 31-36 31H60zm24 44c11 0 18-5 18-13s-7-13-18-13h-5v26z"/>
-                </svg>
-            </div>
             <div class="title-section">
-                <h1>JoyAI VL Live</h1>
+                <h1>JoyAI-VL-Interaction</h1>
             </div>
         </div>
         <div class="header-right">
@@ -3907,7 +3868,6 @@ limitations under the License.
         const themeToggle = document.getElementById('themeToggle');
         const themeIcon = document.getElementById('themeIcon');
         const themeText = document.getElementById('themeText');
-        const jdLogo = document.getElementById('jdLogo');
         const videoElement = document.getElementById('videoElement');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -6602,17 +6562,6 @@ limitations under the License.
         }
 
         // Theme Toggle: cycles through Auto -> Light -> Dark -> Auto
-        jdLogo.addEventListener('click', () => {
-            window.location.reload();
-        });
-
-        jdLogo.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                window.location.reload();
-            }
-        });
-
         themeToggle.addEventListener('click', () => {
             const currentTheme = localStorage.getItem('theme') || 'auto';
             let nextTheme;
