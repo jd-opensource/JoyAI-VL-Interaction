@@ -17,6 +17,7 @@ MAX_SUBAGENTS="6"
 INSTALL_ASR=0
 INSTALL_TTS=0
 INSTALL_BACKGROUND_AGENT=0
+INSTALL_VLLM=0
 INSTALL_DEV=0
 DRY_RUN=0
 INSTALL_RETRIES="${INSTALL_RETRIES:-3}"
@@ -25,13 +26,14 @@ usage() {
   cat <<'USAGE'
 Usage: install.sh [options]
 
-安装 JoyVL WebUI，并固定安装 vLLM 0.22.0。
+安装 JoyVL WebUI。默认只安装 WebUI/LiveKit 依赖。
 
 Options:
   --with-asr                 安装轻量 ASR 适配服务包。
   --with-tts                 安装轻量 TTS 适配服务包。
   --with-background-agent    安装后台 agent API 服务包。
-  --with-all                 启用以上全部可选包。
+  --with-vllm                额外安装 vLLM 0.22.0。
+  --with-all                 启用 ASR/TTS/background-agent 适配包。
   --dev                      为可选包安装 dev extras。
   --max-subagents N          配置后台 agent 最大子代理数，默认 6。
   --dry-run                  只打印将要执行的命令，不真正安装。
@@ -44,6 +46,7 @@ Environment overrides:
   CONSTRAINTS_FILE=/path/to/constraints.txt
 
 兼容性说明:
+  - 默认环境只用于 WebUI；模型、ASR、TTS、background-agent 可继续使用已有服务端口。
   - 本脚本只为 ASR、TTS、background-agent 安装轻量 adapter/API 包。
   - ASR 文档里的 nightly vLLM/CUDA 环境建议单独建环境，不要混进主环境。
   - TTS 推理服务需要 vllm-omni==0.22.0 搭配 vllm==0.22.0；本安装目录统一使用
@@ -150,7 +153,10 @@ PY
 install_packages() {
   run "$UV_BIN" venv --python "$PYTHON_BIN" --seed "$VENV_DIR"
   pip_install_editable "$WEBUI_DIR"
-  uv_pip_install "vllm==$VLLM_VERSION"
+
+  if [ "$INSTALL_VLLM" -eq 1 ]; then
+    uv_pip_install "vllm==$VLLM_VERSION"
+  fi
 
   if [ "$INSTALL_ASR" -eq 1 ]; then
     if [ "$INSTALL_DEV" -eq 1 ]; then
@@ -186,6 +192,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --with-background-agent)
       INSTALL_BACKGROUND_AGENT=1
+      ;;
+    --with-vllm)
+      INSTALL_VLLM=1
       ;;
     --with-all)
       INSTALL_ASR=1

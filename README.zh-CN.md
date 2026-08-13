@@ -83,9 +83,9 @@ cd JoyAI-VL-Interaction
 ./services/scripts/run.sh minimal
 ```
 
-然后在浏览器中打开 `https://127.0.0.1:8199`。
+然后在浏览器中打开 `https://127.0.0.1:7099`。
 
-WebUI 会自动下载并启动 LiveKit Server 1.13.2。远程访问时只需对外开放一个 TCP 端口（默认 `8199`，用于 WebUI HTTPS 和 LiveKit 信令）和一个 UDP 端口（默认 `8299`，用于 WebRTC 媒体传输）。LiveKit 的内部信令端口 `TCP 8298` 仅监听 `127.0.0.1`，无需对外开放。版本、自动下载和端口配置详见 [WebUI 文档](services/webui/README.zh-CN.md#livekit-server-与网络端口)。
+WebUI 会自动下载并启动 LiveKit Server 1.13.2。远程访问时需要开放 `TCP 7099`（WebUI HTTPS 和代理后的 LiveKit 信令）、`UDP 8299`（WebRTC 媒体传输），并建议同时开放 `TCP 8299` 作为 WebRTC fallback。LiveKit 的内部信令端口 `TCP 8298` 仅监听 `127.0.0.1`，无需对外开放。版本、自动下载和端口配置详见 [WebUI 文档](services/webui/README.zh-CN.md#livekit-server-与网络端口)。
 
 👉 如需完整部署 ASR、TTS、后台 agent 以及更多配置细节，请参阅[入门指南](doc/getting_started.zh-CN.md)。
 

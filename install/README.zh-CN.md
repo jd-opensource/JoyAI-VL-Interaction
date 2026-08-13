@@ -22,12 +22,12 @@
 ## 核心安装
 
 - `install.sh` 使用 `uv venv` 创建虚拟环境，然后用 `uv pip install` 下载并安装依赖。
-- `install.sh` 以 editable 模式安装 WebUI。
-- `install.sh` 固定 `vllm==0.22.0`。
-- `install.sh` 默认使用 `constraints.txt` 约束与 vLLM 相关的传递 Web 栈依赖。
+- `install.sh` 以 editable 模式安装 WebUI，包括 LiveKit Python 包。
+- `install.sh` 默认不安装 vLLM；只有需要把模型运行时也放进这个环境时才使用 `--with-vllm`。
+- `install.sh` 默认使用 `constraints.txt`。启用 `--with-vllm` 时这些约束才关键。
 - 本安装目录统一使用 Python 3.12。
-- `vllm==0.22.0` 支持 Python `>=3.10,<3.15`，但本项目使用 Python 3.12 安装并测试。它会拉取较重的 PyTorch/CUDA 依赖，因此推荐使用干净的新虚拟环境。
-- WebUI 模板本身没有直接声明 FastAPI。启用可选适配器时会安装 FastAPI，`vllm==0.22.0` 也可能通过传递依赖安装 FastAPI。
+- `vllm==0.22.0` 支持 Python `>=3.10,<3.15`，但本项目使用 Python 3.12 安装并测试。它会拉取较重的 PyTorch/CUDA 依赖；只跑 WebUI 时不要安装它。
+- WebUI 模板本身没有直接声明 FastAPI。启用可选适配器时会安装 FastAPI；使用 `--with-vllm` 时，`vllm==0.22.0` 也可能通过传递依赖安装 FastAPI。
 
 ### vLLM Web 栈约束
 
@@ -59,12 +59,13 @@ prometheus-fastapi-instrumentator<8
 - `--with-tts`：安装 FastAPI TTS WebSocket 适配器服务。
 - `--with-background-agent`：安装 FastAPI Codex 后台 agent API。
 - `--with-all`：安装上述所有可选包。
+- `--with-vllm`：额外把 `vllm==0.22.0` 安装到此环境。
 
 这些包依赖常见 Web 服务库，例如 FastAPI、Uvicorn、WebSockets、HTTPX 和 Pydantic。它们不会安装 ASR nightly vLLM、vLLM Omni、模型权重或 CUDA 特定 wheel。
 
 ## ASR 运行时环境
 
-`services/asr/README.md` 使用 Python 3.12、vLLM nightly 和 CUDA 12.9 index。除非你明确希望替换主环境中固定的 `vllm==0.22.0`，否则不要把该运行时混入核心 WebUI 环境。
+`services/asr/README.md` 使用 Python 3.12、vLLM nightly 和 CUDA 12.9 index。不要把该运行时混入只用于 WebUI 的环境。
 
 安装 ASR 适配器：
 

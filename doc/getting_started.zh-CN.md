@@ -57,7 +57,7 @@
 
 `services/scripts/run.sh minimal` 会在后台启动 `webinfer`，并让 WebUI 保持在前台运行。使用 `services/scripts/run.sh` 时，只有最终的 WebUI 进程启动后，启动流程才算完成。在该终端按 `Ctrl+C` 可停止由编排器启动的服务。
 
-在浏览器中打开：`https://127.0.0.1:8099`
+在浏览器中打开：`https://127.0.0.1:7099`
 
 ## 完整部署（所有服务）
 
@@ -128,7 +128,7 @@ curl http://127.0.0.1:8992/health   # TTS（可选）
 curl http://127.0.0.1:8079/health   # background-agent（可选）
 ```
 
-Web UI 可通过 `https://127.0.0.1:8099` 访问（接受自签名证书警告）。
+Web UI 可通过 `https://127.0.0.1:7099` 访问（接受自签名证书警告）。
 
 ## RTSP 本地推流测试
 

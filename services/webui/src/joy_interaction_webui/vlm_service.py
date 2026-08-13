@@ -261,7 +261,12 @@ class VLMService:
                 "response_extract_ms": (end_time - response_extract_start) * 1000,
                 "total_ms": inference_time * 1000,
             }
-            logger.info(f"VLM response: {result} (latency: {inference_time*1000:.0f}ms)")
+            logger.info(
+                "[%s] VLM response: %s (latency: %.0fms)",
+                self.session_id,
+                result,
+                inference_time * 1000,
+            )
             return result
 
         except Exception as e:
@@ -520,8 +525,11 @@ class VLMService:
                 "total_ms": inference_time * 1000,
             }
             logger.info(
-                f"VLM batch response ({len(frames_data)} frames): {result} "
-                f"(latency: {inference_time*1000:.0f}ms)"
+                "[%s] VLM batch response (%s frames): %s (latency: %.0fms)",
+                self.session_id,
+                len(frames_data),
+                result,
+                inference_time * 1000,
             )
             return result
 

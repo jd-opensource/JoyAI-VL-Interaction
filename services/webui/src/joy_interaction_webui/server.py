@@ -21,21 +21,29 @@ video tracks for VLM analysis.
 """
 
 import asyncio
+import base64
+import contextlib
+import io
 import json
 import logging
 import os
+import re
 import signal
+import shutil
 import socket
 import subprocess
 import sys
 import time
 import uuid
-from collections import defaultdict
+from collections import defaultdict, deque
+from dataclasses import dataclass
+from pathlib import Path
 
 import aiohttp
 from aiohttp import web
 from livekit import api as livekit_api
 from livekit import rtc as livekit_rtc
+from PIL import Image
 
 from .vlm_service import VLMService
 from .video_processor import VideoProcessorTrack
@@ -54,8 +62,14 @@ logger = logging.getLogger(__name__)
 # Global objects
 vlm_service = None  # Kept for backwards compat; default session uses sessions["default"]
 websockets = set()  # Track active WebSocket connections (all)
-rtsp_tracks = {}  # Track active RTSP streams {session_id: (rtsp_track, processor_track)}
+rtsp_tracks = {}  # session_id -> (rtsp_track, processor_track, frame_task, optional_livekit_relay)
 livekit_workers = {}  # session_id -> LiveKitSessionWorker
+uploaded_videos = {}  # upload_id -> UploadedVideo
+video_ffmpeg_sessions = {}  # session_id -> UploadedVideoSession
+uploaded_video_livekit_sessions = {}  # session_id -> upload_id
+uploaded_video_frame_relays = {}  # session_id -> BrowserFrameLiveKitRelay
+session_disconnect_cleanup_tasks = {}  # session_id -> delayed cleanup task
+upload_session_lifecycle_locks = defaultdict(asyncio.Lock)
 
 # Multi-session state
 default_vlm_config = {}  # Set at startup; used to create new sessions
@@ -66,6 +80,94 @@ LIVEKIT_INTERNAL_URL = os.environ.get("LIVEKIT_INTERNAL_URL", "ws://127.0.0.1:82
 LIVEKIT_PUBLIC_PATH = os.environ.get("LIVEKIT_PUBLIC_PATH", "/livekit")
 LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "joyvl")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "joyvl-secret-123456789012345678901234")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        logger.warning("Invalid integer env %s=%r; using %s", name, os.environ.get(name), default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        logger.warning("Invalid float env %s=%r; using %s", name, os.environ.get(name), default)
+        return default
+
+
+VIDEO_UPLOAD_ROOT = Path(os.environ.get("VIDEO_UPLOAD_ROOT", "/tmp/joyvl-video-uploads"))
+VIDEO_UPLOAD_MAX_BYTES = _env_int("VIDEO_UPLOAD_MAX_BYTES", 10 * 1024 * 1024 * 1024)
+VIDEO_UPLOAD_CHUNK_BYTES = _env_int("VIDEO_UPLOAD_CHUNK_BYTES", 1024 * 1024)
+VIDEO_UPLOAD_RTSP_BASE = os.environ.get("VIDEO_UPLOAD_RTSP_BASE", "rtsp://127.0.0.1:8554").rstrip("/")
+VIDEO_UPLOAD_FFMPEG_BIN = os.environ.get("VIDEO_UPLOAD_FFMPEG_BIN", "ffmpeg")
+VIDEO_UPLOAD_READY_TIMEOUT = _env_float("VIDEO_UPLOAD_READY_TIMEOUT", 8.0)
+VIDEO_UPLOAD_TERMINATE_TIMEOUT = _env_float("VIDEO_UPLOAD_TERMINATE_TIMEOUT", 3.0)
+VIDEO_UPLOAD_PREROLL_SECONDS = max(0.0, _env_float("VIDEO_UPLOAD_PREROLL_SECONDS", 5.0))
+VIDEO_UPLOAD_PREROLL_BLACK_THRESHOLD = max(
+    0.0, _env_float("VIDEO_UPLOAD_PREROLL_BLACK_THRESHOLD", 8.0)
+)
+VIDEO_UPLOAD_PREROLL_MAX_EXTRA_SECONDS = max(
+    0.0, _env_float("VIDEO_UPLOAD_PREROLL_MAX_EXTRA_SECONDS", 2.0)
+)
+VIDEO_UPLOAD_ALLOWED_SUFFIXES = {
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".mkv",
+    ".webm",
+    ".avi",
+    ".ts",
+}
+VIDEO_UPLOAD_FRAME_MAX_BYTES = _env_int("VIDEO_UPLOAD_FRAME_MAX_BYTES", 2 * 1024 * 1024)
+VIDEO_UPLOAD_FRAME_MAX_PIXELS = _env_int("VIDEO_UPLOAD_FRAME_MAX_PIXELS", 1920 * 1080)
+VIDEO_UPLOAD_DISCONNECT_GRACE_SECONDS = max(
+    0.0,
+    _env_float("VIDEO_UPLOAD_DISCONNECT_GRACE_SECONDS", 5.0),
+)
+LIVEKIT_PROXY_ENV_VARS = (
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+)
+
+
+async def _connect_livekit_room_without_proxy(room, token: str, options) -> None:
+    """Connect to local LiveKit without inheriting HTTP proxy env vars."""
+    saved = {name: os.environ.pop(name, None) for name in LIVEKIT_PROXY_ENV_VARS}
+    try:
+        await room.connect(LIVEKIT_INTERNAL_URL, token, options)
+    finally:
+        for name, value in saved.items():
+            if value is not None:
+                os.environ[name] = value
+
+
+@dataclass
+class UploadedVideo:
+    upload_id: str
+    path: Path
+    original_name: str
+    content_type: str
+    size_bytes: int
+    owner_session_id: str
+    created_at: float
+
+
+@dataclass
+class UploadedVideoSession:
+    session_id: str
+    upload_id: str
+    rtsp_url: str
+    process: asyncio.subprocess.Process
+    stderr_lines: deque
+    stderr_task: asyncio.Task | None
+    preroll_seconds: float = 0.0
 
 
 def notify_session_json(session_id: str, payload: dict):
@@ -198,6 +300,10 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
 
     logger.info("[%s] Cleaning up session", session_id)
 
+    disconnect_task = session_disconnect_cleanup_tasks.pop(session_id, None)
+    if disconnect_task is not None and disconnect_task is not asyncio.current_task():
+        disconnect_task.cancel()
+
     session_sockets = list(session_websockets.pop(session_id, set()))
     for ws in session_sockets:
         try:
@@ -208,25 +314,32 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
             websockets.discard(ws)
             ws_to_session.pop(ws, None)
 
-    if session_id in rtsp_tracks:
-        await _stop_rtsp_session(session_id)
+    async with upload_session_lifecycle_locks[session_id]:
+        if session_id in video_ffmpeg_sessions:
+            await _stop_uploaded_video_session(session_id)
 
-    if session_id in livekit_workers:
-        await stop_livekit_worker(session_id)
+        await stop_uploaded_frame_relay(session_id)
+        uploaded_video_livekit_sessions.pop(session_id, None)
 
-    session = sessions.pop(session_id, None)
-    cancelled = 0
-    cancelled_background = 0
-    if session and session.get("vlm_service"):
-        svc = session["vlm_service"]
-        cancelled = await svc.cancel_active_requests()
-        if reset_adapter:
-            await svc.reset_adapter_session()
-        await svc.close(cancel_requests=False)
-    if session and session.get("background_service"):
-        bg_svc = session["background_service"]
-        cancelled_background = await bg_svc.cancel_active_requests()
-        await bg_svc.close(cancel_requests=False)
+        if session_id in rtsp_tracks:
+            await _stop_rtsp_session(session_id)
+
+        if session_id in livekit_workers:
+            await stop_livekit_worker(session_id)
+
+        session = sessions.pop(session_id, None)
+        cancelled = 0
+        cancelled_background = 0
+        if session and session.get("vlm_service"):
+            svc = session["vlm_service"]
+            cancelled = await svc.cancel_active_requests()
+            if reset_adapter:
+                await svc.reset_adapter_session()
+            await svc.close(cancel_requests=False)
+        if session and session.get("background_service"):
+            bg_svc = session["background_service"]
+            cancelled_background = await bg_svc.cancel_active_requests()
+            await bg_svc.close(cancel_requests=False)
 
     logger.info(
         "[%s] Session cleanup complete: removed=%s, websockets=%s, cancelled_vlm_tasks=%s, cancelled_background_tasks=%s",
@@ -243,6 +356,26 @@ async def cleanup_session(session_id: str, reset_adapter: bool = True) -> dict:
         "cancelled_vlm_tasks": cancelled,
         "cancelled_background_tasks": cancelled_background,
     }
+
+
+async def _cleanup_disconnected_upload_session(session_id: str) -> None:
+    task = asyncio.current_task()
+    try:
+        await asyncio.sleep(VIDEO_UPLOAD_DISCONNECT_GRACE_SECONDS)
+        if session_websockets.get(session_id):
+            return
+        if session_id not in uploaded_video_livekit_sessions:
+            return
+        logger.info(
+            "[%s] Upload control channel remained disconnected; cleaning up session",
+            session_id,
+        )
+        await cleanup_session(session_id)
+    except asyncio.CancelledError:
+        return
+    finally:
+        if session_disconnect_cleanup_tasks.get(session_id) is task:
+            session_disconnect_cleanup_tasks.pop(session_id, None)
 
 
 def is_port_available(port, host="0.0.0.0"):
@@ -451,6 +584,9 @@ async def websocket_handler(request):
     ws_to_session[ws] = session_id
     session_websockets[session_id].add(ws)
     websockets.add(ws)
+    disconnect_task = session_disconnect_cleanup_tasks.pop(session_id, None)
+    if disconnect_task is not None:
+        disconnect_task.cancel()
     logger.info(
         f"WebSocket client connected. session_id={session_id}, total clients: {len(websockets)}"
     )
@@ -646,6 +782,23 @@ async def websocket_handler(request):
                                     }
                                 )
 
+                    elif data.get("type") == "uploaded_video_frame":
+                        upload_id = str(data.get("upload_id") or "").strip()
+                        active_upload_id = uploaded_video_livekit_sessions.get(session_id)
+                        if not active_upload_id or upload_id != active_upload_id:
+                            logger.warning(
+                                "[%s] Ignoring uploaded frame for inactive upload_id=%s",
+                                session_id,
+                                upload_id,
+                            )
+                            continue
+                        await publish_uploaded_browser_frame(
+                            session_id,
+                            str(data.get("image") or ""),
+                            media_time=data.get("media_time"),
+                            frame_sequence=data.get("frame_sequence"),
+                        )
+
                     elif data.get("type") == "set_debug":
                         session_data = get_or_create_session(session_id)
                         if "show_request_payload" in data:
@@ -716,6 +869,12 @@ async def websocket_handler(request):
         logger.info(
             f"WebSocket client disconnected. session_id={session_id}, total clients: {len(websockets)}"
         )
+        if (
+            not session_websockets.get(session_id)
+            and session_id in uploaded_video_livekit_sessions
+        ):
+            task = asyncio.create_task(_cleanup_disconnected_upload_session(session_id))
+            session_disconnect_cleanup_tasks[session_id] = task
 
     return ws
 
@@ -764,7 +923,7 @@ def _livekit_token(identity: str, room_name: str, *, can_publish: bool, can_subs
 
 
 class LiveKitSessionWorker:
-    """Server-side LiveKit participant that consumes browser camera video."""
+    """Server-side LiveKit participant that consumes browser video."""
 
     def __init__(self, session_id: str):
         self.session_id = session_id
@@ -786,13 +945,34 @@ class LiveKitSessionWorker:
         def on_track_subscribed(track, publication, participant):
             if track.kind != livekit_rtc.TrackKind.KIND_VIDEO:
                 return
+            if str(participant.identity or "").startswith("rtsp-publisher-"):
+                logger.info(
+                    "[%s] Ignoring LiveKit RTSP relay track: participant=%s track=%s",
+                    self.session_id,
+                    participant.identity,
+                    publication.sid,
+                )
+                return
             logger.info(
                 "[%s] LiveKit video track subscribed: participant=%s track=%s",
                 self.session_id,
                 participant.identity,
                 publication.sid,
             )
-            task = asyncio.create_task(self._consume_track(track))
+            if self.session_id in uploaded_video_livekit_sessions:
+                notify_session_json(
+                    self.session_id,
+                    {
+                        "type": "uploaded_video_status",
+                        "session_id": self.session_id,
+                        "phase": "track_published",
+                        "upload_id": uploaded_video_livekit_sessions[self.session_id],
+                        "message": "The browser video track is published to LiveKit.",
+                    },
+                )
+            task = asyncio.create_task(
+                self._consume_track(track, participant_identity=str(participant.identity or ""))
+            )
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
@@ -801,14 +981,14 @@ class LiveKitSessionWorker:
             logger.info("[%s] LiveKit worker disconnected: %s", self.session_id, reason)
             self._closed.set()
 
-        await self.room.connect(
-            LIVEKIT_INTERNAL_URL,
+        await _connect_livekit_room_without_proxy(
+            self.room,
             token,
             livekit_rtc.RoomOptions(auto_subscribe=True),
         )
         logger.info("[%s] LiveKit worker connected to room %s", self.session_id, self.room_name)
 
-    async def _consume_track(self, track) -> None:
+    async def _consume_track(self, track, *, participant_identity: str = "") -> None:
         session = get_or_create_session(self.session_id)
         processor = VideoProcessorTrack(
             None,
@@ -822,10 +1002,35 @@ class LiveKitSessionWorker:
             capacity=1,
         )
         self._streams.add(stream)
+        first_frame = True
+        relay_frame_count = None
+        if participant_identity.startswith("upload-relay-"):
+            relay = uploaded_video_frame_relays.get(self.session_id)
+            relay_frame_count = relay.frame_count if relay is not None else 0
         try:
             async for frame_event in stream:
                 if self._closed.is_set():
                     break
+                if relay_frame_count is not None:
+                    relay = uploaded_video_frame_relays.get(self.session_id)
+                    current_count = relay.frame_count if relay is not None else relay_frame_count
+                    if current_count <= relay_frame_count:
+                        continue
+                    relay_frame_count = current_count
+                if first_frame:
+                    first_frame = False
+                    if self.session_id in uploaded_video_livekit_sessions:
+                        notify_session_json(
+                            self.session_id,
+                            {
+                                "type": "uploaded_video_status",
+                                "session_id": self.session_id,
+                                "phase": "analysis_started",
+                                "upload_id": uploaded_video_livekit_sessions[self.session_id],
+                                "message": "The first displayed video frame reached the analyzer.",
+                            },
+                        )
+                    logger.info("[%s] First LiveKit video frame received", self.session_id)
                 await processor.process_livekit_frame(frame_event)
         except asyncio.CancelledError:
             raise
@@ -856,6 +1061,257 @@ class LiveKitSessionWorker:
             logger.debug("[%s] Error disconnecting LiveKit room", self.session_id, exc_info=True)
 
 
+class BrowserFrameLiveKitRelay:
+    """Publish browser-rendered upload frames into the local LiveKit room."""
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.room_name = _livekit_room_name(session_id)
+        self.room = livekit_rtc.Room()
+        self.video_source = None
+        self.video_track = None
+        self.publication = None
+        self.width = 0
+        self.height = 0
+        self.frame_count = 0
+        self._closed = False
+
+    async def start(self, width: int, height: int) -> None:
+        if self._closed or self.video_source is not None:
+            return
+
+        token = _livekit_token(
+            f"upload-relay-{self.session_id}",
+            self.room_name,
+            can_publish=True,
+            can_subscribe=False,
+        )
+        await _connect_livekit_room_without_proxy(
+            self.room,
+            token,
+            livekit_rtc.RoomOptions(auto_subscribe=False),
+        )
+        self.width = int(width)
+        self.height = int(height)
+        self.video_source = livekit_rtc.VideoSource(self.width, self.height)
+        self.video_track = livekit_rtc.LocalVideoTrack.create_video_track(
+            "uploaded-browser-video",
+            self.video_source,
+        )
+        publish_options = livekit_rtc.TrackPublishOptions()
+        publish_options.source = livekit_rtc.TrackSource.SOURCE_CAMERA
+        self.publication = await self.room.local_participant.publish_track(
+            self.video_track,
+            publish_options,
+        )
+        logger.info(
+            "[%s] Browser-frame LiveKit relay published track=%s %sx%s",
+            self.session_id,
+            self.publication.sid,
+            self.width,
+            self.height,
+        )
+        notify_session_json(
+            self.session_id,
+            {
+                "type": "uploaded_video_status",
+                "session_id": self.session_id,
+                "phase": "relay_ready",
+                "upload_id": uploaded_video_livekit_sessions.get(self.session_id),
+                "message": "The 7099 browser-frame relay is connected to LiveKit.",
+            },
+        )
+
+    def publish_rgb(self, rgb_bytes: bytes, width: int, height: int) -> None:
+        if self._closed or self.video_source is None:
+            raise RuntimeError("Browser-frame LiveKit relay is not ready")
+        if int(width) != self.width or int(height) != self.height:
+            raise ValueError(
+                f"Uploaded frame size changed from {self.width}x{self.height} "
+                f"to {width}x{height}"
+            )
+        frame = livekit_rtc.VideoFrame(
+            self.width,
+            self.height,
+            livekit_rtc.VideoBufferType.RGB24,
+            rgb_bytes,
+        )
+        self.video_source.capture_frame(
+            frame,
+            timestamp_us=time.monotonic_ns() // 1000,
+        )
+        self.frame_count += 1
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        with contextlib.suppress(Exception):
+            if self.publication is not None:
+                await self.room.local_participant.unpublish_track(self.publication.sid)
+        with contextlib.suppress(Exception):
+            if self.video_source is not None:
+                await self.video_source.aclose()
+        with contextlib.suppress(Exception):
+            await self.room.disconnect()
+
+
+def _decode_uploaded_browser_frame(image_data: str) -> tuple[bytes, int, int]:
+    prefix = "data:image/jpeg;base64,"
+    if not image_data.startswith(prefix):
+        raise ValueError("Uploaded browser frame must be a JPEG data URL")
+    encoded = image_data[len(prefix) :]
+    max_encoded = ((VIDEO_UPLOAD_FRAME_MAX_BYTES + 2) // 3) * 4 + 8
+    if not encoded or len(encoded) > max_encoded:
+        raise ValueError("Uploaded browser frame exceeds the encoded size limit")
+    raw = base64.b64decode(encoded, validate=True)
+    if len(raw) > VIDEO_UPLOAD_FRAME_MAX_BYTES:
+        raise ValueError("Uploaded browser frame exceeds the decoded size limit")
+
+    with Image.open(io.BytesIO(raw)) as image:
+        width, height = image.size
+        if width <= 0 or height <= 0 or width * height > VIDEO_UPLOAD_FRAME_MAX_PIXELS:
+            raise ValueError("Uploaded browser frame dimensions are invalid")
+        rgb = image.convert("RGB")
+        return rgb.tobytes(), width, height
+
+
+async def publish_uploaded_browser_frame(
+    session_id: str,
+    image_data: str,
+    *,
+    media_time=None,
+    frame_sequence=None,
+) -> None:
+    relay = uploaded_video_frame_relays.get(session_id)
+    if relay is None:
+        raise RuntimeError("Uploaded browser-frame relay is not active")
+    rgb_bytes, width, height = await asyncio.to_thread(
+        _decode_uploaded_browser_frame,
+        image_data,
+    )
+    relay.publish_rgb(rgb_bytes, width, height)
+    if relay.frame_count == 1 or relay.frame_count % 30 == 0:
+        logger.info(
+            "[%s] Browser upload frame relayed count=%s media_time=%s sequence=%s",
+            session_id,
+            relay.frame_count,
+            media_time,
+            frame_sequence,
+        )
+
+
+async def stop_uploaded_frame_relay(session_id: str) -> bool:
+    relay = uploaded_video_frame_relays.pop(session_id, None)
+    if relay is None:
+        return False
+    await relay.close()
+    logger.info(
+        "[%s] Browser-frame LiveKit relay stopped after %s frames",
+        session_id,
+        relay.frame_count,
+    )
+    return True
+
+
+class RTSPToLiveKitRelay:
+    """Publish decoded RTSP frames to the browser through LiveKit/WebRTC."""
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.room_name = _livekit_room_name(session_id)
+        self.room = livekit_rtc.Room()
+        self.video_source = None
+        self.video_track = None
+        self.publication = None
+        self.width = 0
+        self.height = 0
+        self._closed = False
+        self._start_lock = asyncio.Lock()
+
+    async def start(self, width: int, height: int) -> None:
+        async with self._start_lock:
+            if self._closed or self.video_source is not None:
+                return
+
+            token = _livekit_token(
+                f"rtsp-publisher-{self.session_id}",
+                self.room_name,
+                can_publish=True,
+                can_subscribe=False,
+            )
+            await _connect_livekit_room_without_proxy(
+                self.room,
+                token,
+                livekit_rtc.RoomOptions(auto_subscribe=False),
+            )
+
+            self.width = width
+            self.height = height
+            self.video_source = livekit_rtc.VideoSource(width, height)
+            self.video_track = livekit_rtc.LocalVideoTrack.create_video_track(
+                "uploaded-rtsp-video",
+                self.video_source,
+            )
+            publish_options = livekit_rtc.TrackPublishOptions()
+            publish_options.source = livekit_rtc.TrackSource.SOURCE_CAMERA
+            self.publication = await self.room.local_participant.publish_track(
+                self.video_track,
+                publish_options,
+            )
+            logger.info(
+                "[%s] RTSP LiveKit relay published track=%s %sx%s",
+                self.session_id,
+                self.publication.sid,
+                width,
+                height,
+            )
+
+    async def publish_frame(self, frame) -> None:
+        if self._closed:
+            return
+
+        rgb = frame.to_ndarray(format="rgb24")
+        height, width = rgb.shape[:2]
+        if self.video_source is None:
+            await self.start(width, height)
+
+        if self._closed or self.video_source is None:
+            return
+        if width != self.width or height != self.height:
+            logger.warning(
+                "[%s] Skipping RTSP relay frame with changed resolution %sx%s, expected %sx%s",
+                self.session_id,
+                width,
+                height,
+                self.width,
+                self.height,
+            )
+            return
+
+        video_frame = livekit_rtc.VideoFrame(
+            width,
+            height,
+            livekit_rtc.VideoBufferType.RGB24,
+            rgb.tobytes(),
+        )
+        self.video_source.capture_frame(video_frame, timestamp_us=int(time.time() * 1_000_000))
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+
+        with contextlib.suppress(Exception):
+            if self.publication is not None:
+                await self.room.local_participant.unpublish_track(self.publication.sid)
+        with contextlib.suppress(Exception):
+            if self.video_source is not None:
+                await self.video_source.aclose()
+        with contextlib.suppress(Exception):
+            await self.room.disconnect()
+
+
 async def ensure_livekit_worker(session_id: str) -> LiveKitSessionWorker:
     worker = livekit_workers.get(session_id)
     if worker is not None:
@@ -881,24 +1337,38 @@ async def livekit_token(request):
 
     session_id = str(data.get("session_id") or request.query.get("session_id") or "default")
     session_id = session_id.strip() or "default"
+    role = str(data.get("role") or request.query.get("role") or "publisher").strip().lower()
+    subscriber_only = role in {"subscriber", "playback", "viewer"}
     get_or_create_session(session_id)
 
-    try:
-        await ensure_livekit_worker(session_id)
-    except Exception as e:
-        logger.error("[%s] Failed to start LiveKit worker: %s", session_id, e, exc_info=True)
-        return web.Response(
-            status=503,
-            content_type="application/json",
-            text=json.dumps({"error": f"LiveKit worker unavailable: {e}"}),
-        )
+    if not subscriber_only:
+        try:
+            await ensure_livekit_worker(session_id)
+            if session_id in uploaded_video_livekit_sessions:
+                notify_session_json(
+                    session_id,
+                    {
+                        "type": "uploaded_video_status",
+                        "session_id": session_id,
+                        "phase": "livekit_connected",
+                        "upload_id": uploaded_video_livekit_sessions[session_id],
+                        "message": "The upload analysis worker is connected to LiveKit.",
+                    },
+                )
+        except Exception as e:
+            logger.error("[%s] Failed to start LiveKit worker: %s", session_id, e, exc_info=True)
+            return web.Response(
+                status=503,
+                content_type="application/json",
+                text=json.dumps({"error": f"LiveKit worker unavailable: {e}"}),
+            )
 
     room_name = _livekit_room_name(session_id)
     token = _livekit_token(
         f"browser-{session_id}",
         room_name,
-        can_publish=True,
-        can_subscribe=False,
+        can_publish=not subscriber_only,
+        can_subscribe=subscriber_only,
     )
     scheme = "wss" if request.scheme == "https" else "ws"
     public_url = f"{scheme}://{request.host}{LIVEKIT_PUBLIC_PATH}"
@@ -1027,6 +1497,706 @@ async def session_cleanup(request):
     return web.Response(content_type="application/json", text=json.dumps(result))
 
 
+def _safe_token(value: str, default: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "")).strip("._-")
+    return (safe[:80] or default)
+
+
+def _json_response(payload: dict, *, status: int = 200) -> web.Response:
+    return web.Response(
+        status=status,
+        content_type="application/json",
+        text=json.dumps(payload, ensure_ascii=False),
+    )
+
+
+def _stderr_tail(stderr_lines: deque, max_chars: int = 1600) -> str:
+    text = "\n".join(str(line) for line in stderr_lines if line)
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
+def _uploaded_rtsp_url(session_id: str, upload_id: str) -> str:
+    safe_session = _safe_token(session_id, "default")
+    safe_upload = _safe_token(upload_id, "upload")
+    return f"{VIDEO_UPLOAD_RTSP_BASE}/joyvl-{safe_session}-{safe_upload}"
+
+
+def _format_seconds(value: float) -> str:
+    text = f"{max(0.0, float(value)):.3f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _format_ffmpeg_rate(rate) -> str:
+    if rate:
+        numerator = getattr(rate, "numerator", None)
+        denominator = getattr(rate, "denominator", None)
+        if numerator and denominator:
+            return f"{numerator}/{denominator}"
+        try:
+            fps = float(rate)
+            if fps > 0:
+                return _format_seconds(fps)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return "25"
+
+
+def _probe_uploaded_video(upload: UploadedVideo) -> dict:
+    try:
+        import av
+
+        with av.open(str(upload.path)) as container:
+            if not container.streams.video:
+                raise ValueError("No video stream found")
+            stream = container.streams.video[0]
+            codec_context = stream.codec_context
+            width = int(stream.width or codec_context.width or 0)
+            height = int(stream.height or codec_context.height or 0)
+            if width <= 0 or height <= 0:
+                raise ValueError("Video dimensions are unknown")
+            return {
+                "codec": codec_context.name,
+                "width": width,
+                "height": height,
+                "fps": _format_ffmpeg_rate(
+                    getattr(stream, "average_rate", None) or getattr(stream, "base_rate", None)
+                ),
+            }
+    except Exception as err:
+        raise RuntimeError(f"Unable to probe uploaded video: {err}") from err
+
+
+def _fit_uploaded_capture_size(width: int, height: int) -> tuple[int, int]:
+    scale = min(1.0, 1280 / max(1, width), 720 / max(1, height))
+    fitted_width = max(2, int(round(width * scale)))
+    fitted_height = max(2, int(round(height * scale)))
+    return fitted_width, fitted_height
+
+
+def _build_uploaded_copy_ffmpeg_cmd(upload: UploadedVideo, rtsp_url: str) -> list[str]:
+    return [
+        VIDEO_UPLOAD_FFMPEG_BIN,
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "warning",
+        "-re",
+        "-stream_loop",
+        "-1",
+        "-i",
+        str(upload.path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-c:v",
+        "copy",
+        "-f",
+        "rtsp",
+        "-rtsp_transport",
+        "tcp",
+        rtsp_url,
+    ]
+
+
+def _build_uploaded_ffmpeg_cmd(
+    upload: UploadedVideo,
+    rtsp_url: str,
+    *,
+    video_info: dict | None = None,
+) -> tuple[list[str], float]:
+    preroll_seconds = VIDEO_UPLOAD_PREROLL_SECONDS
+    real_cmd = _build_uploaded_copy_ffmpeg_cmd(upload, rtsp_url)
+    if preroll_seconds <= 0:
+        return real_cmd, 0.0
+
+    return [
+        VIDEO_UPLOAD_FFMPEG_BIN,
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "warning",
+        "-re",
+        "-stream_loop",
+        "-1",
+        "-i",
+        str(upload.path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-vf",
+        f"tpad=start_duration={_format_seconds(preroll_seconds)}:color=black",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-tune",
+        "zerolatency",
+        "-pix_fmt",
+        "yuv420p",
+        "-f",
+        "rtsp",
+        "-rtsp_transport",
+        "tcp",
+        rtsp_url,
+    ], preroll_seconds
+
+
+def _is_near_black_frame(frame) -> bool:
+    try:
+        rgb = frame.to_ndarray(format="rgb24")
+        if rgb.size == 0:
+            return False
+        y_step = max(1, rgb.shape[0] // 120)
+        x_step = max(1, rgb.shape[1] // 120)
+        sample = rgb[::y_step, ::x_step]
+        return float(sample.mean()) <= VIDEO_UPLOAD_PREROLL_BLACK_THRESHOLD
+    except Exception:
+        logger.debug("Unable to inspect RTSP preroll frame", exc_info=True)
+        return False
+
+
+async def _capture_ffmpeg_stderr(record: UploadedVideoSession) -> None:
+    stream = record.process.stderr
+    if stream is None:
+        return
+
+    try:
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").strip()
+            if text:
+                record.stderr_lines.append(text)
+                logger.debug("[%s] ffmpeg: %s", record.session_id, text)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.debug("[%s] Error reading ffmpeg stderr", record.session_id, exc_info=True)
+
+
+async def _start_uploaded_ffmpeg(
+    session_id: str,
+    upload: UploadedVideo,
+    rtsp_url: str,
+    *,
+    video_info: dict | None = None,
+) -> UploadedVideoSession:
+    cmd, preroll_seconds = _build_uploaded_ffmpeg_cmd(upload, rtsp_url, video_info=video_info)
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=(os.name == "posix"),
+        )
+    except FileNotFoundError as err:
+        raise RuntimeError(
+            f"ffmpeg not found: {VIDEO_UPLOAD_FFMPEG_BIN}. Set VIDEO_UPLOAD_FFMPEG_BIN."
+        ) from err
+
+    record = UploadedVideoSession(
+        session_id=session_id,
+        upload_id=upload.upload_id,
+        rtsp_url=rtsp_url,
+        process=process,
+        stderr_lines=deque(maxlen=50),
+        stderr_task=None,
+        preroll_seconds=preroll_seconds,
+    )
+    record.stderr_task = asyncio.create_task(_capture_ffmpeg_stderr(record))
+    if preroll_seconds > 0:
+        notify_session_json(
+            session_id,
+            {
+                "type": "uploaded_video_status",
+                "session_id": session_id,
+                "phase": "preroll_started",
+                "preroll_seconds": preroll_seconds,
+                "message": (
+                    f"RTSP preroll started with {preroll_seconds:g}s of black video; "
+                    "analysis count is paused until real frames arrive."
+                ),
+            },
+        )
+    else:
+        notify_session_json(
+            session_id,
+            {
+                "type": "uploaded_video_status",
+                "session_id": session_id,
+                "phase": "streaming_started",
+                "preroll_seconds": 0,
+                "message": "Uploaded video RTSP streaming started.",
+            },
+        )
+    logger.info(
+        "[%s] Started uploaded-video ffmpeg pid=%s upload_id=%s rtsp=%s preroll=%ss",
+        session_id,
+        process.pid,
+        upload.upload_id,
+        rtsp_url,
+        preroll_seconds,
+    )
+    return record
+
+
+def _signal_ffmpeg_process(process: asyncio.subprocess.Process, sig: signal.Signals) -> None:
+    if process.returncode is not None:
+        return
+    if os.name == "posix":
+        os.killpg(process.pid, sig)
+    elif sig == signal.SIGTERM:
+        process.terminate()
+    else:
+        process.kill()
+
+
+async def _terminate_uploaded_ffmpeg(record: UploadedVideoSession) -> dict:
+    process = record.process
+    killed = False
+
+    if process.returncode is None:
+        try:
+            _signal_ffmpeg_process(process, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+        try:
+            await asyncio.wait_for(process.wait(), timeout=VIDEO_UPLOAD_TERMINATE_TIMEOUT)
+        except asyncio.TimeoutError:
+            killed = True
+            try:
+                _signal_ffmpeg_process(process, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            await process.wait()
+
+    if record.stderr_task:
+        record.stderr_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await record.stderr_task
+
+    return {
+        "ffmpeg_stopped": True,
+        "ffmpeg_killed": killed,
+        "ffmpeg_returncode": process.returncode,
+    }
+
+
+async def _stop_uploaded_video_session(session_id: str) -> dict:
+    record = video_ffmpeg_sessions.pop(session_id, None)
+    if record is None:
+        return {"ffmpeg_stopped": False}
+
+    result = await _terminate_uploaded_ffmpeg(record)
+    logger.info(
+        "[%s] Uploaded-video ffmpeg stopped upload_id=%s returncode=%s killed=%s",
+        session_id,
+        record.upload_id,
+        result.get("ffmpeg_returncode"),
+        result.get("ffmpeg_killed"),
+    )
+    return result
+
+
+async def _open_rtsp_track(
+    session_id: str,
+    rtsp_url: str,
+    *,
+    connect_timeout: float = 0.0,
+    ffmpeg_record: UploadedVideoSession | None = None,
+) -> RTSPVideoTrack:
+    deadline = time.time() + max(0.0, connect_timeout)
+    last_error: Exception | None = None
+
+    while True:
+        if ffmpeg_record and ffmpeg_record.process.returncode is not None:
+            stderr = _stderr_tail(ffmpeg_record.stderr_lines)
+            message = f"ffmpeg exited before RTSP became available: {ffmpeg_record.process.returncode}"
+            if stderr:
+                message = f"{message}\n{stderr}"
+            raise RuntimeError(message)
+
+        try:
+            return RTSPVideoTrack(rtsp_url)
+        except Exception as err:
+            last_error = err
+            if connect_timeout <= 0 or time.time() >= deadline:
+                raise last_error
+            await asyncio.sleep(0.25)
+
+
+async def _start_rtsp_processing(
+    session_id: str,
+    rtsp_url: str,
+    *,
+    connect_timeout: float = 0.0,
+    ffmpeg_record: UploadedVideoSession | None = None,
+    publish_to_livekit: bool = False,
+    livekit_relay: RTSPToLiveKitRelay | None = None,
+    skip_initial_black: bool = False,
+    preroll_seconds: float = 0.0,
+) -> dict:
+    if session_id in rtsp_tracks:
+        logger.warning("[%s] RTSP session already exists, stopping it first", session_id)
+        await _stop_rtsp_session(session_id)
+
+    logger.info("[%s] Starting RTSP processing for %s", session_id, rtsp_url)
+    rtsp_track = await _open_rtsp_track(
+        session_id,
+        rtsp_url,
+        connect_timeout=connect_timeout,
+        ffmpeg_record=ffmpeg_record,
+    )
+
+    session = get_or_create_session(session_id)
+    processor_track = VideoProcessorTrack(
+        rtsp_track,
+        session["vlm_service"],
+        text_callback=get_session_callback(session_id),
+        background_service=session.get("background_service"),
+    )
+    if livekit_relay is None and publish_to_livekit:
+        livekit_relay = RTSPToLiveKitRelay(session_id)
+    preroll_state = {
+        "enabled": bool(skip_initial_black),
+        "analysis_started": not bool(skip_initial_black),
+        "preroll_seconds": max(0.0, float(preroll_seconds or 0.0)),
+        "frames_skipped": 0,
+        "first_frame_wall_time": None,
+        "max_skip_seconds": max(
+            0.0,
+            float(preroll_seconds or 0.0) + VIDEO_UPLOAD_PREROLL_MAX_EXTRA_SECONDS,
+        ),
+    }
+    stats = rtsp_track.get_stats()
+    if livekit_relay is not None:
+        width = int(stats.get("width") or 0)
+        height = int(stats.get("height") or 0)
+        if width > 0 and height > 0:
+            await livekit_relay.start(width, height)
+
+    async def consume_frames():
+        try:
+            while not rtsp_track._stopped:
+                try:
+                    frame = await rtsp_track.recv()
+                    if livekit_relay is not None:
+                        await livekit_relay.publish_frame(frame)
+
+                    if preroll_state["enabled"] and not preroll_state["analysis_started"]:
+                        now = time.time()
+                        if preroll_state["first_frame_wall_time"] is None:
+                            preroll_state["first_frame_wall_time"] = now
+                        elapsed = now - preroll_state["first_frame_wall_time"]
+                        near_black = _is_near_black_frame(frame)
+                        if near_black and elapsed <= preroll_state["max_skip_seconds"]:
+                            preroll_state["frames_skipped"] += 1
+                            continue
+
+                        preroll_state["analysis_started"] = True
+                        notify_session_json(
+                            session_id,
+                            {
+                                "type": "uploaded_video_status",
+                                "session_id": session_id,
+                                "phase": "analysis_started",
+                                "preroll_seconds": preroll_state["preroll_seconds"],
+                                "frames_skipped": preroll_state["frames_skipped"],
+                                "message": (
+                                    "Real uploaded video frames reached the analyzer; "
+                                    "count will start from the next VLM result."
+                                ),
+                            },
+                        )
+                        logger.info(
+                            "[%s] Uploaded-video preroll finished after skipping %s frames",
+                            session_id,
+                            preroll_state["frames_skipped"],
+                        )
+
+                    await processor_track.process_av_frame(frame)
+                except StopAsyncIteration:
+                    logger.info("[%s] RTSP stream ended", session_id)
+                    break
+                except Exception as e:
+                    logger.error("[%s] Error consuming RTSP frame: %s", session_id, e)
+                    break
+        finally:
+            if livekit_relay is not None:
+                await livekit_relay.close()
+            logger.info("[%s] Frame consumption stopped", session_id)
+
+    frame_task = asyncio.create_task(consume_frames())
+    rtsp_tracks[session_id] = (
+        rtsp_track,
+        processor_track,
+        frame_task,
+        livekit_relay,
+        preroll_state,
+    )
+
+    logger.info(
+        "[%s] RTSP processing started: %s %sx%s",
+        session_id,
+        stats.get("codec"),
+        stats.get("width"),
+        stats.get("height"),
+    )
+    return stats
+
+
+async def video_upload(request):
+    """Receive a user-selected video file and store it under /tmp without starting a session."""
+    if request.content_type != "multipart/form-data":
+        return _json_response({"error": "Expected multipart/form-data upload"}, status=400)
+
+    upload_id = uuid.uuid4().hex
+    upload_dir = VIDEO_UPLOAD_ROOT / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=False)
+
+    session_id = "default"
+    original_name = ""
+    content_type = ""
+    size_bytes = 0
+    dest_path: Path | None = None
+
+    try:
+        reader = await request.multipart()
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+
+            if part.name == "session_id":
+                session_id = _safe_token((await part.text()).strip(), "default")
+                continue
+
+            if part.name not in {"file", "video"}:
+                await part.release()
+                continue
+
+            original_name = Path(part.filename or "video.mp4").name
+            suffix = Path(original_name).suffix.lower()
+            if suffix not in VIDEO_UPLOAD_ALLOWED_SUFFIXES:
+                shutil.rmtree(upload_dir, ignore_errors=True)
+                return _json_response(
+                    {
+                        "error": (
+                            "Unsupported video extension. Allowed: "
+                            + ", ".join(sorted(VIDEO_UPLOAD_ALLOWED_SUFFIXES))
+                        )
+                    },
+                    status=400,
+                )
+
+            content_type = part.headers.get("Content-Type", "")
+            dest_path = upload_dir / f"video{suffix}"
+            with dest_path.open("wb") as out:
+                while True:
+                    chunk = await part.read_chunk(VIDEO_UPLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    size_bytes += len(chunk)
+                    if size_bytes > VIDEO_UPLOAD_MAX_BYTES:
+                        shutil.rmtree(upload_dir, ignore_errors=True)
+                        return _json_response(
+                            {
+                                "error": (
+                                    f"Video upload exceeds limit "
+                                    f"({VIDEO_UPLOAD_MAX_BYTES} bytes)"
+                                )
+                            },
+                            status=413,
+                        )
+                    out.write(chunk)
+            break
+
+        if dest_path is None or not dest_path.exists() or size_bytes <= 0:
+            shutil.rmtree(upload_dir, ignore_errors=True)
+            return _json_response({"error": "Missing video file"}, status=400)
+
+        uploaded = UploadedVideo(
+            upload_id=upload_id,
+            path=dest_path,
+            original_name=original_name,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            owner_session_id=session_id,
+            created_at=time.time(),
+        )
+        uploaded_videos[upload_id] = uploaded
+        logger.info(
+            "[%s] Uploaded video upload_id=%s path=%s bytes=%s",
+            session_id,
+            upload_id,
+            dest_path,
+            size_bytes,
+        )
+        return _json_response(
+            {
+                "status": "uploaded",
+                "upload_id": upload_id,
+                "filename": original_name,
+                "size_bytes": size_bytes,
+                "path": str(dest_path),
+                "session_id": session_id,
+            }
+        )
+    except ValueError as err:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        logger.warning("[%s] Invalid video upload request: %s", session_id, err)
+        return _json_response({"error": "Invalid multipart upload"}, status=400)
+    except Exception:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        logger.exception("[%s] Video upload failed", session_id)
+        return _json_response({"error": "Video upload failed"}, status=500)
+
+
+async def video_start(request):
+    """Bind an uploaded video to a browser-published LiveKit session."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    session_id = _safe_token(str(data.get("session_id") or "default").strip(), "default")
+    upload_id = str(data.get("upload_id") or "").strip()
+    if not upload_id:
+        return _json_response({"error": "Missing upload_id"}, status=400)
+
+    async with upload_session_lifecycle_locks[session_id]:
+        upload = uploaded_videos.get(upload_id)
+        if upload is None or not upload.path.exists():
+            return _json_response({"error": "Uploaded video not found"}, status=404)
+
+        if session_id in video_ffmpeg_sessions:
+            await _stop_uploaded_video_session(session_id)
+        if session_id in rtsp_tracks:
+            await _stop_rtsp_session(session_id)
+
+        await stop_uploaded_frame_relay(session_id)
+        if session_id in livekit_workers:
+            await stop_livekit_worker(session_id)
+
+        get_or_create_session(session_id)
+        uploaded_video_livekit_sessions[session_id] = upload_id
+        notify_session_json(
+            session_id,
+            {
+                "type": "uploaded_video_status",
+                "session_id": session_id,
+                "phase": "local_media_ready",
+                "upload_id": upload_id,
+                "message": "The uploaded video is ready for browser playback.",
+            },
+        )
+        try:
+            video_info = _probe_uploaded_video(upload)
+            capture_width, capture_height = _fit_uploaded_capture_size(
+                int(video_info["width"]),
+                int(video_info["height"]),
+            )
+            await ensure_livekit_worker(session_id)
+            notify_session_json(
+                session_id,
+                {
+                    "type": "uploaded_video_status",
+                    "session_id": session_id,
+                    "phase": "livekit_connected",
+                    "upload_id": upload_id,
+                    "message": "The upload analysis worker is connected to LiveKit.",
+                },
+            )
+            relay = BrowserFrameLiveKitRelay(session_id)
+            uploaded_video_frame_relays[session_id] = relay
+            await relay.start(capture_width, capture_height)
+        except Exception as err:
+            await stop_uploaded_frame_relay(session_id)
+            await stop_livekit_worker(session_id)
+            uploaded_video_livekit_sessions.pop(session_id, None)
+            logger.error(
+                "[%s] Failed to prepare uploaded browser-frame relay: %s",
+                session_id,
+                err,
+                exc_info=True,
+            )
+            return _json_response(
+                {"error": f"Unable to prepare LiveKit upload relay: {err}"},
+                status=500,
+            )
+
+        logger.info(
+            "[%s] Uploaded video bound to 7099 LiveKit relay upload_id=%s path=%s capture=%sx%s",
+            session_id,
+            upload_id,
+            upload.path,
+            capture_width,
+            capture_height,
+        )
+
+    return _json_response(
+        {
+            "status": "started",
+            "session_id": session_id,
+            "upload_id": upload_id,
+            "transport": "livekit-upload-relay",
+            "capture_width": capture_width,
+            "capture_height": capture_height,
+        }
+    )
+
+
+async def video_stop(request):
+    """Stop a browser-published uploaded-video analysis session."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    session_id = _safe_token(str(data.get("session_id") or "default").strip(), "default")
+    async with upload_session_lifecycle_locks[session_id]:
+        upload_id = uploaded_video_livekit_sessions.pop(session_id, None)
+        relay_stopped = await stop_uploaded_frame_relay(session_id)
+        ffmpeg_result = await _stop_uploaded_video_session(session_id)
+        rtsp_stopped = False
+        if session_id in rtsp_tracks:
+            await _stop_rtsp_session(session_id)
+            rtsp_stopped = True
+
+        livekit_stopped = session_id in livekit_workers
+        await stop_livekit_worker(session_id)
+        session = sessions.get(session_id)
+        cancelled_requests = 0
+        if session and session.get("vlm_service"):
+            cancelled_requests = await session["vlm_service"].cancel_active_requests()
+
+    logger.info(
+        "[%s] Uploaded LiveKit video stopped upload_id=%s cancelled_vlm_tasks=%s",
+        session_id,
+        upload_id,
+        cancelled_requests,
+    )
+
+    return _json_response(
+        {
+            "status": "stopped",
+            "session_id": session_id,
+            "upload_id": upload_id,
+            "transport": "livekit-upload-relay",
+            "relay_stopped": relay_stopped,
+            "livekit_stopped": livekit_stopped,
+            "cancelled_vlm_tasks": cancelled_requests,
+            "rtsp_stopped": rtsp_stopped,
+            **ffmpeg_result,
+        }
+    )
+
+
 async def rtsp_start(request):
     """
     Start RTSP stream processing.
@@ -1049,16 +2219,8 @@ async def rtsp_start(request):
                 text=json.dumps({"error": "Missing rtsp_url parameter"}),
             )
 
-        # Check if session already exists
-        if session_id in rtsp_tracks:
-            logger.warning(f"RTSP session {session_id} already exists, stopping it first")
-            await _stop_rtsp_session(session_id)
-
-        logger.info(f"Starting RTSP stream for session {session_id}")
-
-        # Create RTSP video track
         try:
-            rtsp_track = RTSPVideoTrack(rtsp_url)
+            stats = await _start_rtsp_processing(session_id, rtsp_url)
         except Exception as e:
             logger.error(f"Failed to create RTSP track: {e}")
             return web.Response(
@@ -1066,48 +2228,6 @@ async def rtsp_start(request):
                 content_type="application/json",
                 text=json.dumps({"error": f"Failed to connect to RTSP stream: {str(e)}"}),
             )
-
-        # Create processor track with this session's VLM and session-scoped callback
-        session = get_or_create_session(session_id)
-        session_vlm = session["vlm_service"]
-        background_service = session.get("background_service")
-        session_callback = get_session_callback(session_id)
-        processor_track = VideoProcessorTrack(
-            rtsp_track,
-            session_vlm,
-            text_callback=session_callback,
-            background_service=background_service,
-        )
-
-        # Start background task to consume frames
-        async def consume_frames():
-            """Background task to continuously pull frames from processor track"""
-            try:
-                while not rtsp_track._stopped:
-                    try:
-                        _ = await processor_track.recv()
-                        # Frame is processed, just discard it (VLM analysis happens in recv())
-                    except StopAsyncIteration:
-                        logger.info(f"RTSP stream {session_id} ended")
-                        break
-                    except Exception as e:
-                        logger.error(f"Error consuming RTSP frame for {session_id}: {e}")
-                        break
-            finally:
-                logger.info(f"Frame consumption stopped for {session_id}")
-
-        frame_task = asyncio.create_task(consume_frames())
-
-        # Store reference with frame task
-        rtsp_tracks[session_id] = (rtsp_track, processor_track, frame_task)
-
-        # Get stream stats
-        stats = rtsp_track.get_stats()
-
-        logger.info(
-            f"RTSP stream started: {session_id} - {stats.get('codec')} "
-            f"{stats.get('width')}x{stats.get('height')}"
-        )
 
         return web.Response(
             content_type="application/json",
@@ -1155,13 +2275,18 @@ async def rtsp_status(request):
     try:
         status_list = []
 
-        for session_id, (rtsp_track, processor_track, frame_task) in rtsp_tracks.items():
+        for session_id, record in rtsp_tracks.items():
+            rtsp_track, processor_track, frame_task = record[:3]
+            livekit_relay = record[3] if len(record) > 3 else None
+            preroll_state = record[4] if len(record) > 4 else None
             stats = rtsp_track.get_stats()
             status_list.append(
                 {
                     "session_id": session_id,
                     "connected": stats.get("connected"),
                     "frames_received": stats.get("frames_received"),
+                    "livekit_relay": bool(livekit_relay),
+                    "preroll": preroll_state,
                     "stream_info": {
                         "codec": stats.get("codec"),
                         "width": stats.get("width"),
@@ -1186,7 +2311,9 @@ async def rtsp_status(request):
 async def _stop_rtsp_session(session_id: str):
     """Helper function to stop an RTSP session"""
     if session_id in rtsp_tracks:
-        rtsp_track, processor_track, frame_task = rtsp_tracks[session_id]
+        record = rtsp_tracks[session_id]
+        rtsp_track, processor_track, frame_task = record[:3]
+        livekit_relay = record[3] if len(record) > 3 else None
 
         # Signal stop first so _read_frame exits early on its next iteration
         rtsp_track._stopped = True
@@ -1211,6 +2338,12 @@ async def _stop_rtsp_session(session_id: str):
         except Exception as e:
             logger.warning(f"Error stopping RTSP track: {e}")
 
+        if livekit_relay is not None:
+            try:
+                await livekit_relay.close()
+            except Exception as e:
+                logger.warning(f"Error stopping RTSP LiveKit relay: {e}")
+
         # Remove from tracking
         del rtsp_tracks[session_id]
         logger.info(f"RTSP stream stopped: {session_id}")
@@ -1228,12 +2361,27 @@ async def on_shutdown(app):
 
     logger.info("Shutting down server...")
 
+    disconnect_tasks = list(session_disconnect_cleanup_tasks.values())
+    session_disconnect_cleanup_tasks.clear()
+    for task in disconnect_tasks:
+        task.cancel()
+    if disconnect_tasks:
+        await asyncio.gather(*disconnect_tasks, return_exceptions=True)
+
     # Close all websockets and clear session state
     for ws in list(websockets):
         await ws.close()
     websockets.clear()
     session_websockets.clear()
     ws_to_session.clear()
+
+    for session_id in list(video_ffmpeg_sessions.keys()):
+        await _stop_uploaded_video_session(session_id)
+    logger.info("Uploaded-video ffmpeg processes closed")
+
+    for session_id in list(uploaded_video_frame_relays.keys()):
+        await stop_uploaded_frame_relay(session_id)
+    uploaded_video_livekit_sessions.clear()
 
     # Close all RTSP streams
     for session_id in list(rtsp_tracks.keys()):
@@ -1268,7 +2416,7 @@ async def create_app(test_mode=False):
         Configured web.Application instance
     """
     # Create web application
-    app = web.Application()
+    app = web.Application(client_max_size=VIDEO_UPLOAD_MAX_BYTES)
     app.router.add_get("/", index)
     app.router.add_get("/models", models)
     app.router.add_get("/detect-services", detect_services)
@@ -1279,6 +2427,9 @@ async def create_app(test_mode=False):
     app.router.add_post("/api/livekit/token", livekit_token)
     app.router.add_route("*", "/livekit/{tail:.*}", livekit_proxy)
     app.router.add_post("/api/session/cleanup", session_cleanup)
+    app.router.add_post("/api/video/upload", video_upload)
+    app.router.add_post("/api/video/start", video_start)
+    app.router.add_post("/api/video/stop", video_stop)
 
     # RTSP endpoints
     app.router.add_post("/api/rtsp/start", rtsp_start)

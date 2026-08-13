@@ -72,6 +72,7 @@ class VideoProcessorTrack:
         self._last_sub_capture_time = 0.0
         self._last_callback_inference_count = 0
         self._last_callback_response = None
+        self._processing_tasks = set()
         self._stopped = False
 
     async def recv(self):
@@ -221,7 +222,11 @@ class VideoProcessorTrack:
         background_needs_frame = self._background_needs_frame(now)
 
         if self.frame_count == 1:
-            logger.info("First frame received: %s", bgr_img.shape)
+            logger.info(
+                "[%s] First frame received: %s",
+                self.vlm_service.session_id,
+                bgr_img.shape,
+            )
 
         if frames_per_batch <= 1:
             time_since_last = now - self._last_process_time
@@ -239,7 +244,7 @@ class VideoProcessorTrack:
                 )
 
             if need_conversion:
-                asyncio.create_task(
+                self._schedule_processing(
                     self.vlm_service.process_frame(
                         pil_img,
                         frame_timing_ms=frame_timing_ms,
@@ -253,7 +258,8 @@ class VideoProcessorTrack:
                 )
                 self._last_process_time = now
                 logger.info(
-                    "Frame %s: Sending to VLM (interval=%ss)",
+                    "[%s] Frame %s: Sending to VLM (interval=%ss)",
+                    self.vlm_service.session_id,
                     self.frame_count,
                     interval_sec,
                 )
@@ -289,10 +295,11 @@ class VideoProcessorTrack:
             if len(self._frame_buffer) >= frames_per_batch:
                 batch = list(self._frame_buffer)
                 self._frame_buffer.clear()
-                asyncio.create_task(self.vlm_service.process_frame_batch(batch))
+                self._schedule_processing(self.vlm_service.process_frame_batch(batch))
                 self._last_process_time = now
                 logger.info(
-                    "Frame %s: Sending %s frames to VLM (interval=%ss, batch=%s)",
+                    "[%s] Frame %s: Sending %s frames to VLM (interval=%ss, batch=%s)",
+                    self.vlm_service.session_id,
                     self.frame_count,
                     len(batch),
                     interval_sec,
@@ -300,6 +307,25 @@ class VideoProcessorTrack:
                 )
 
         self._emit_text_update()
+
+    def _schedule_processing(self, processing_coro) -> None:
+        task = asyncio.create_task(self._run_processing(processing_coro))
+        self._processing_tasks.add(task)
+        task.add_done_callback(self._processing_tasks.discard)
+
+    async def _run_processing(self, processing_coro) -> None:
+        try:
+            await processing_coro
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "[%s] Video frame processing task failed",
+                self.vlm_service.session_id,
+            )
+        finally:
+            if not self._stopped:
+                self._emit_text_update()
 
     def _emit_text_update(self) -> None:
         if not self.text_callback:
@@ -364,6 +390,8 @@ class VideoProcessorTrack:
 
     def stop(self) -> None:
         self._stopped = True
+        for task in list(self._processing_tasks):
+            task.cancel()
 
     def _add_text_overlay(self, img: np.ndarray, text: str, status: str = "") -> np.ndarray:
         img_copy = img.copy()

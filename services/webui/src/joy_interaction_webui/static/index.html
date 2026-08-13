@@ -19,7 +19,7 @@ limitations under the License.
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JoyAI VL Live</title>
+    <title>JoyAI-VL-Interaction</title>
 
     <!-- Favicons -->
     <link rel="icon" type="image/svg+xml" href="favicon/favicon.svg?v=joyai-red-2">
@@ -124,17 +124,6 @@ limitations under the License.
             display: flex;
             align-items: center;
             gap: 20px;
-        }
-
-        .logo {
-            width: 50px;
-            height: 50px;
-            padding: 5px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.96);
-            box-shadow: 0 8px 22px rgba(80, 0, 6, 0.22);
-            line-height: 0;
-            cursor: pointer;
         }
 
         .title-section h1 {
@@ -521,6 +510,7 @@ limitations under the License.
 
         input[type="text"],
         input[type="number"],
+        input[type="file"],
         select,
         textarea {
             width: 100%;
@@ -532,6 +522,137 @@ limitations under the License.
             font-size: 13px;
             font-family: inherit;
             transition: border 0.2s;
+        }
+
+        input[type="file"] {
+            min-width: 0;
+            cursor: pointer;
+        }
+
+        .video-upload-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .video-upload-row input[type="file"] {
+            flex: 1;
+        }
+
+        .video-upload-panel {
+            display: grid;
+            gap: 8px;
+        }
+
+        .video-file-input-native {
+            position: absolute;
+            width: 1px !important;
+            height: 1px !important;
+            padding: 0 !important;
+            margin: -1px !important;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0 !important;
+            opacity: 0;
+        }
+
+        .video-drop-zone {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 86px;
+            padding: 14px;
+            border: 1px dashed rgba(255, 255, 255, 0.22);
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(200, 30, 42, 0.12), rgba(255, 255, 255, 0.03));
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        }
+
+        .video-drop-zone:hover,
+        .video-drop-zone.drag-over {
+            border-color: rgba(200, 30, 42, 0.72);
+            background:
+                linear-gradient(135deg, rgba(200, 30, 42, 0.18), rgba(255, 255, 255, 0.06));
+        }
+
+        .video-drop-zone.drag-over {
+            transform: translateY(-1px);
+        }
+
+        .video-drop-zone.has-file {
+            border-style: solid;
+            border-color: rgba(118, 185, 0, 0.5);
+        }
+
+        .video-drop-zone.disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        .video-drop-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .video-drop-icon svg,
+        .video-drop-icon .lucide {
+            width: 22px !important;
+            height: 22px !important;
+        }
+
+        .video-drop-copy {
+            min-width: 0;
+            display: grid;
+            gap: 3px;
+        }
+
+        .video-drop-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .video-drop-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            overflow-wrap: anywhere;
+        }
+
+        .video-upload-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .video-select-btn {
+            flex: 1;
+            justify-content: center;
+            min-height: 38px;
+        }
+
+        .video-select-btn.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        #videoUploadStatus {
+            min-height: 15px;
+            word-break: break-word;
         }
 
         input:focus,
@@ -808,6 +929,119 @@ limitations under the License.
             color: #ffffff;
         }
 
+        .top-progress-banner {
+            position: fixed;
+            top: 8px;
+            left: 50%;
+            width: fit-content;
+            max-width: min(680px, calc(100vw - 220px));
+            margin: 0;
+            padding: 6px 10px 7px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 8px;
+            background: rgba(20, 17, 17, 0.86);
+            color: #ffffff;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            transform: translateX(-50%);
+            z-index: 1001;
+            pointer-events: none;
+        }
+
+        .top-progress-banner[hidden] {
+            display: none;
+        }
+
+        .top-progress-banner.ok {
+            border-color: rgba(118, 185, 0, 0.35);
+        }
+
+        .top-progress-banner.error {
+            border-color: rgba(239, 83, 80, 0.45);
+        }
+
+        .top-progress-content {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            max-width: none;
+            margin: 0 auto;
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.25;
+        }
+
+        .top-progress-content .lucide {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 auto;
+            animation: progressIconSpin 1s linear infinite;
+        }
+
+        .top-progress-banner.ok .top-progress-content .lucide,
+        .top-progress-banner.error .top-progress-content .lucide {
+            animation: none;
+        }
+
+        .top-progress-text {
+            flex: 1;
+            min-width: 0;
+            max-width: 520px;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+
+        .top-progress-percent {
+            flex: 0 0 auto;
+            color: rgba(255, 255, 255, 0.78);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .top-progress-track {
+            max-width: none;
+            height: 2px;
+            margin: 5px auto 0;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .top-progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--joy-red-light), var(--joy-red), #ffffff);
+            transition: width 0.18s ease;
+        }
+
+        .top-progress-banner.indeterminate .top-progress-fill {
+            width: 42%;
+            animation: progressIndeterminate 1.1s ease-in-out infinite;
+        }
+
+        .top-progress-banner.ok .top-progress-fill {
+            background: #76b900;
+        }
+
+        .top-progress-banner.error .top-progress-fill {
+            background: var(--error-color);
+        }
+
+        @keyframes progressIndeterminate {
+            0% {
+                transform: translateX(-110%);
+            }
+            100% {
+                transform: translateX(260%);
+            }
+        }
+
+        @keyframes progressIconSpin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
         /* Video Display */
         .video-card {
             background: var(--card-bg);
@@ -1055,14 +1289,19 @@ limitations under the License.
             display: flex;
         }
 
-        .small-stop-btn:hover {
+        .small-stop-btn:hover:not(:disabled) {
             background: linear-gradient(135deg, #EF5350, #D32F2F) !important;
             transform: scale(1.1);
             opacity: 1 !important;
         }
 
-        .small-stop-btn:active {
+        .small-stop-btn:active:not(:disabled) {
             transform: scale(0.95);
+        }
+
+        .small-stop-btn:disabled {
+            cursor: wait;
+            opacity: 0.45;
         }
 
         .small-stop-btn i, .small-stop-btn svg {
@@ -2569,19 +2808,6 @@ limitations under the License.
             vertical-align: middle;
         }
 
-        .logo .lucide,
-        .logo svg {
-            width: 100%;
-            height: 100%;
-            filter: none;
-        }
-
-        /* Logo color - theme-aware (subtle glow on light background) */
-        body.light-theme .logo .lucide,
-        body.light-theme .logo svg {
-            filter: none;
-        }
-
         .icon-btn .lucide,
         .settings-btn .lucide,
         .video-control-btn .lucide {
@@ -2695,7 +2921,9 @@ limitations under the License.
         #apiKey,
         #modelSelect,
         #cameraSelect,
-        #rtspUrl {
+        #rtspUrl,
+        #videoDropZone,
+        #videoFileInput {
             transition: all 0.3s ease;
         }
 
@@ -2706,7 +2934,9 @@ limitations under the License.
         #apiBaseUrl:focus,
         #apiKey:focus,
         #modelSelect:focus,
-        #rtspUrl:focus {
+        #rtspUrl:focus,
+        #videoDropZone:focus,
+        #videoFileInput:focus {
             border-color: rgba(200, 200, 200, 0.6) !important;
             box-shadow: 0 0 0 2px rgba(200, 200, 200, 0.15),
                         0 0 8px rgba(200, 200, 200, 0.2) !important;
@@ -2758,7 +2988,9 @@ limitations under the License.
         #apiKey.applied,
         #modelSelect.applied,
         #cameraSelect.applied,
-        #rtspUrl.applied {
+        #rtspUrl.applied,
+        #videoDropZone.applied,
+        #videoFileInput.applied {
             animation: settingApplied 0.6s ease-out;
         }
 
@@ -2860,17 +3092,21 @@ limitations under the License.
                 gap: 10px;
             }
 
+            .top-progress-banner {
+                top: 6px;
+                left: 8px;
+                max-width: min(520px, calc(100vw - 132px));
+                padding: 5px 8px 6px;
+                transform: none;
+            }
+
+            .top-progress-text {
+                max-width: none;
+            }
+
             .header-left {
                 min-width: 0;
                 gap: 10px;
-            }
-
-            .logo {
-                width: 38px;
-                height: 38px;
-                padding: 4px;
-                border-radius: 10px;
-                flex: 0 0 auto;
             }
 
             .title-section h1 {
@@ -3237,6 +3473,12 @@ limitations under the License.
                 padding: 8px 10px;
             }
 
+            .top-progress-banner {
+                left: 6px;
+                max-width: calc(100vw - 116px);
+                font-size: 11px;
+            }
+
             .title-section h1 {
                 font-size: 16px;
             }
@@ -3328,7 +3570,7 @@ limitations under the License.
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <script>
-        document.title = 'JoyAI VL Live';
+        document.title = 'JoyAI-VL-Interaction';
 
         // Initialize Lucide icons immediately when DOM is ready
         if (document.readyState === 'loading') {
@@ -3339,18 +3581,22 @@ limitations under the License.
     </script>
 </head>
 <body>
-    <!-- Header -->
+    <div class="top-progress-banner" id="topProgressBanner" hidden aria-live="polite" aria-atomic="true">
+        <div class="top-progress-content">
+            <i data-lucide="loader-circle"></i>
+            <span class="top-progress-text" id="topProgressText">Preparing video...</span>
+            <span class="top-progress-percent" id="topProgressPercent"></span>
+        </div>
+        <div class="top-progress-track" aria-hidden="true">
+            <div class="top-progress-fill" id="topProgressFill"></div>
+        </div>
+    </div>
+
+        <!-- Header -->
     <div class="header">
         <div class="header-left">
-            <div class="logo" id="jdLogo" role="button" tabindex="0" aria-label="Refresh page">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-hidden="true">
-                    <rect width="128" height="128" rx="28" fill="#c81e2a"/>
-                    <path fill="#fff" d="M25 34h24v38c0 15-9 24-24 24-7 0-13-2-18-5l7-16c3 2 6 3 9 3 5 0 8-3 8-9V52h-6z"/>
-                    <path fill="#fff" d="M60 34h25c22 0 36 12 36 31s-14 31-36 31H60zm24 44c11 0 18-5 18-13s-7-13-18-13h-5v26z"/>
-                </svg>
-            </div>
             <div class="title-section">
-                <h1>JoyAI VL Live</h1>
+                <h1>JoyAI-VL-Interaction</h1>
             </div>
         </div>
         <div class="header-right">
@@ -3665,6 +3911,10 @@ limitations under the License.
                             RTSP Stream
                             <span class="beta-badge">BETA</span>
                         </button>
+                        <button class="input-source-tab" data-source="upload" title="Uploaded video file">
+                            <i data-lucide="file-video" style="width: 14px; height: 14px; margin-right: 4px;"></i>
+                            Video File
+                        </button>
                     </div>
 
                     <!-- Webcam Controls -->
@@ -3699,6 +3949,35 @@ limitations under the License.
                             <input type="text" id="rtspUrl" placeholder="rtsp://192.168.1.100:554/stream" style="margin-bottom: 16px;">
                             <div id="rtspStatus" class="input-hint" style="margin-top: -8px; margin-bottom: 12px; display: none;"></div>
                         </div>
+                    </div>
+
+                    <!-- Uploaded Video Controls -->
+	                    <div id="videoFileControls" style="display: none;">
+	                        <div class="form-group">
+	                            <label>Video File</label>
+	                            <div class="video-upload-panel">
+	                                <input class="video-file-input-native" type="file" id="videoFileInput" accept="video/*,.mp4,.m4v,.mov,.mkv,.webm,.avi,.ts">
+	                                <label class="video-drop-zone" id="videoDropZone" for="videoFileInput" tabindex="0">
+	                                    <span class="video-drop-icon">
+	                                        <i data-lucide="file-video"></i>
+	                                    </span>
+	                                    <span class="video-drop-copy">
+	                                        <span class="video-drop-title" id="videoDropTitle">Choose or drop a video</span>
+	                                        <span class="video-drop-meta" id="videoDropMeta">MP4, MOV, MKV, WebM, AVI, TS</span>
+	                                    </span>
+	                                </label>
+	                                <div class="video-upload-actions">
+	                                    <label class="btn btn-secondary video-select-btn" id="videoSelectBtn" for="videoFileInput">
+	                                        <i data-lucide="folder-open"></i>
+	                                        <span>Choose Video</span>
+	                                    </label>
+	                                    <button class="icon-btn" id="uploadVideoBtn" title="Upload Video" type="button" disabled>
+	                                        <i data-lucide="upload"></i>
+	                                    </button>
+	                                </div>
+	                            </div>
+	                            <div id="videoUploadStatus" class="input-hint"></div>
+	                        </div>
                     </div>
                     <div class="form-group">
                         <!-- RTSP Beta Warning (shown only when RTSP tab is active) -->
@@ -3900,7 +4179,6 @@ limitations under the License.
         const themeToggle = document.getElementById('themeToggle');
         const themeIcon = document.getElementById('themeIcon');
         const themeText = document.getElementById('themeText');
-        const jdLogo = document.getElementById('jdLogo');
         const videoElement = document.getElementById('videoElement');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -3933,6 +4211,17 @@ limitations under the License.
         const mirrorBtn = document.getElementById('mirrorBtn');
         const quickCameraBtn = document.getElementById('quickCameraBtn');
         const quickCameraLabel = document.getElementById('quickCameraLabel');
+        const videoFileInput = document.getElementById('videoFileInput');
+        const videoDropZone = document.getElementById('videoDropZone');
+        const videoDropTitle = document.getElementById('videoDropTitle');
+        const videoDropMeta = document.getElementById('videoDropMeta');
+        const videoSelectBtn = document.getElementById('videoSelectBtn');
+        const uploadVideoBtn = document.getElementById('uploadVideoBtn');
+        const videoUploadStatus = document.getElementById('videoUploadStatus');
+        const topProgressBanner = document.getElementById('topProgressBanner');
+        const topProgressText = document.getElementById('topProgressText');
+        const topProgressPercent = document.getElementById('topProgressPercent');
+        const topProgressFill = document.getElementById('topProgressFill');
         const ttsEnabledToggle = document.getElementById('ttsEnabledToggle');
         const ttsSpeakingLine = document.getElementById('ttsSpeakingLine');
         const ttsSpeakingText = document.getElementById('ttsSpeakingText');
@@ -3941,6 +4230,7 @@ limitations under the License.
         const backgroundMaxFrames = document.getElementById('backgroundMaxFrames');
 
         let livekitRoom = null;
+        let livekitRoomRole = null;
         let livekitVideoTrack = null;
         let livekitVideoPublication = null;
         let localStream = null;
@@ -3970,6 +4260,7 @@ limitations under the License.
         let lastLoggedInferenceCount = 0;
         let pendingPromptEntry = null;
         let streamStartToken = 0;
+        let streamLifecycleState = 'idle';
         let revealVideoAfterMetricsToken = null;
         let revealVideoFallbackTimeout = null;
         let asrWs = null;
@@ -3996,10 +4287,24 @@ limitations under the License.
         // Multi-session: one ID per page/tab so this tab gets only its VLM output
         let sessionId = crypto.randomUUID ? crypto.randomUUID() : 'tab-' + Date.now() + '-' + Math.random().toString(36).slice(2);
         let isAnalysisRunning = false;
+        let activeStreamSource = null;
         let selectedCameraId = null;
         let videoDevices = [];
         let preferredCameraFacing = 'environment';
         let rtspSessionId = 'default';  // For RTSP mode
+        let uploadedVideo = null;
+        let uploadedVideoPreviewUrl = null;
+        let selectedVideoFile = null;
+        let videoDragDepth = 0;
+        let uploadingVideo = false;
+        let uploadVideoPromise = null;
+        let topProgressHideTimer = null;
+        let uploadedFirstInferenceSeen = false;
+        let uploadedCaptureCanvas = null;
+        let uploadedCaptureFrameCallbackId = null;
+        let uploadedCaptureAnimationFrame = null;
+        let uploadedFrameSequence = 0;
+        let uploadedFrameLastSentAt = 0;
         // Enable markdown by default (user can disable if they prefer raw text)
         let markdownEnabled = localStorage.getItem('markdownEnabled') !== 'false';
 
@@ -4026,6 +4331,305 @@ limitations under the License.
             if (quickCameraBtn) {
                 quickCameraBtn.disabled = videoDevices.length < 2;
             }
+        }
+
+        function getActiveInputSource() {
+            const activeTab = document.querySelector('.input-source-tab.active');
+            return activeTab ? activeTab.getAttribute('data-source') : 'webcam';
+        }
+
+        function syncInputSourceControls(source = getActiveInputSource()) {
+            const webcamControls = document.getElementById('webcamControls');
+            const rtspControls = document.getElementById('rtspControls');
+            const videoFileControls = document.getElementById('videoFileControls');
+            const rtspBetaWarning = document.getElementById('rtspBetaWarning');
+
+            if (webcamControls) {
+                webcamControls.style.display = source === 'webcam' ? 'block' : 'none';
+            }
+            if (rtspControls) {
+                rtspControls.style.display = source === 'rtsp' ? 'block' : 'none';
+            }
+            if (videoFileControls) {
+                videoFileControls.style.display = source === 'upload' ? 'block' : 'none';
+            }
+            if (rtspBetaWarning) {
+                rtspBetaWarning.style.display = source === 'rtsp' ? 'flex' : 'none';
+            }
+            if (quickCameraBtn) {
+                quickCameraBtn.style.display = source === 'webcam' ? 'inline-flex' : 'none';
+            }
+        }
+
+        function setVideoUploadStatus(text, state = 'muted') {
+            if (!videoUploadStatus) {
+                return;
+            }
+            videoUploadStatus.textContent = text || '';
+            videoUploadStatus.style.display = text ? 'block' : 'none';
+            if (state === 'error') {
+                videoUploadStatus.style.color = '#ff6b35';
+            } else if (state === 'ok') {
+                videoUploadStatus.style.color = '#76b900';
+            } else {
+                videoUploadStatus.style.color = 'var(--text-muted)';
+            }
+        }
+
+        function setTopProgress(message, { progress = null, indeterminate = false, state = 'active' } = {}) {
+            if (!topProgressBanner || !topProgressText || !topProgressFill || !topProgressPercent) {
+                return;
+            }
+
+            if (topProgressHideTimer) {
+                clearTimeout(topProgressHideTimer);
+                topProgressHideTimer = null;
+            }
+
+            topProgressBanner.hidden = false;
+            topProgressBanner.classList.toggle('indeterminate', Boolean(indeterminate));
+            topProgressBanner.classList.toggle('ok', state === 'ok');
+            topProgressBanner.classList.toggle('error', state === 'error');
+            topProgressText.textContent = message;
+
+            if (Number.isFinite(progress)) {
+                const bounded = Math.max(0, Math.min(100, Math.round(progress)));
+                topProgressFill.style.width = `${bounded}%`;
+                topProgressPercent.textContent = `${bounded}%`;
+            } else {
+                topProgressFill.style.width = indeterminate ? '' : '0%';
+                topProgressPercent.textContent = '';
+            }
+        }
+
+        function hideTopProgress() {
+            if (!topProgressBanner) {
+                return;
+            }
+            if (topProgressHideTimer) {
+                clearTimeout(topProgressHideTimer);
+                topProgressHideTimer = null;
+            }
+            topProgressBanner.hidden = true;
+            topProgressBanner.classList.remove('indeterminate', 'ok', 'error');
+        }
+
+        function finishTopProgress(message) {
+            setTopProgress(message, { progress: 100, state: 'ok' });
+            topProgressHideTimer = setTimeout(hideTopProgress, 1200);
+        }
+
+        function failTopProgress(message) {
+            setTopProgress(message, { progress: 100, state: 'error' });
+            topProgressHideTimer = setTimeout(hideTopProgress, 5000);
+        }
+
+        function formatFileSize(bytes) {
+            const size = Number(bytes) || 0;
+            if (size < 1024) return `${size} B`;
+            if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+            if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+            return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+        }
+
+        const supportedVideoExtensions = ['.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi', '.ts'];
+
+        function isSupportedVideoFile(file) {
+            if (!file) {
+                return false;
+            }
+            const fileType = (file.type || '').toLowerCase();
+            if (fileType.startsWith('video/')) {
+                return true;
+            }
+            const name = (file.name || '').toLowerCase();
+            return supportedVideoExtensions.some(ext => name.endsWith(ext));
+        }
+
+        function getSelectedVideoFile() {
+            return selectedVideoFile || videoFileInput?.files?.[0] || null;
+        }
+
+        function handleUploadedVideoStatus(data) {
+            if (activeStreamSource !== 'upload' || data.session_id && data.session_id !== sessionId) {
+                return;
+            }
+
+            if (data.phase === 'local_media_ready') {
+                setTopProgress('本地视频已就绪，正在连接 LiveKit...', { indeterminate: true });
+                setVideoUploadStatus('Local video ready; connecting LiveKit', 'muted');
+            } else if (data.phase === 'livekit_connected') {
+                setTopProgress('LiveKit 分析端已连接，正在准备 7099 中继...', { indeterminate: true });
+                setVideoUploadStatus('LiveKit analyzer connected; preparing relay', 'muted');
+            } else if (data.phase === 'relay_ready') {
+                setTopProgress('7099 中继已就绪，正在准备本地播放...', { indeterminate: true });
+                setVideoUploadStatus('7099 browser-frame relay connected to LiveKit', 'ok');
+            } else if (data.phase === 'track_published') {
+                setTopProgress('LiveKit 轨道已就绪，正在等待当前播放帧...', { indeterminate: true });
+                setVideoUploadStatus('LiveKit relay track ready', 'ok');
+            } else if (data.phase === 'analysis_started') {
+                uploadedFirstInferenceSeen = false;
+                setTopProgress('当前播放画面已进入分析，正在等待第一次 VLM 结果...', { indeterminate: true });
+                setVideoUploadStatus('Analyzing the locally displayed video through LiveKit', 'ok');
+                updateStatus('Analyzing displayed video...', 'processing');
+            }
+        }
+
+        function getVideoFileKey(file) {
+            if (!file) {
+                return '';
+            }
+            return `${file.name}:${file.size}:${file.lastModified}`;
+        }
+
+        function uploadVideoRequest(formData, onProgress) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/video/upload');
+
+                xhr.upload.addEventListener('progress', event => {
+                    if (event.lengthComputable && typeof onProgress === 'function') {
+                        onProgress((event.loaded / event.total) * 100);
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    let data = {};
+                    try {
+                        data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+                    } catch (error) {
+                        reject(new Error('Video upload returned invalid JSON'));
+                        return;
+                    }
+
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(data);
+                    } else {
+                        reject(new Error(data.error || `Video upload failed (${xhr.status})`));
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    reject(new Error('Video upload network error'));
+                });
+                xhr.addEventListener('abort', () => {
+                    reject(new Error('Video upload aborted'));
+                });
+
+                xhr.send(formData);
+            });
+        }
+
+        function renderVideoDropZone(file = getSelectedVideoFile()) {
+            if (!videoDropZone || !videoDropTitle || !videoDropMeta) {
+                return;
+            }
+
+            if (file) {
+                videoDropZone.classList.add('has-file');
+                videoDropTitle.textContent = file.name || 'Selected video';
+                videoDropMeta.textContent = `${formatFileSize(file.size)} selected`;
+            } else {
+                videoDropZone.classList.remove('has-file');
+                videoDropTitle.textContent = 'Choose or drop a video';
+                videoDropMeta.textContent = 'MP4, MOV, MKV, WebM, AVI, TS';
+            }
+        }
+
+        function syncVideoUploadControls() {
+            const file = getSelectedVideoFile();
+            const disabled = streamLifecycleState !== 'idle' || uploadingVideo;
+            if (videoFileInput) {
+                videoFileInput.disabled = disabled;
+            }
+            if (videoDropZone) {
+                videoDropZone.classList.toggle('disabled', disabled);
+                videoDropZone.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+            }
+            if (videoSelectBtn) {
+                videoSelectBtn.classList.toggle('disabled', disabled);
+            }
+            if (uploadVideoBtn) {
+                const hasReadyUpload = Boolean(uploadedVideo?.uploadId && uploadedVideo.fileKey === getVideoFileKey(file));
+                uploadVideoBtn.disabled = disabled || !file || hasReadyUpload;
+            }
+            renderVideoDropZone(file);
+        }
+
+        async function uploadSelectedVideo({ keepProgressVisible = false } = {}) {
+            const file = getSelectedVideoFile();
+            if (!file) {
+                setVideoUploadStatus('Choose a video file first', 'error');
+                failTopProgress('请选择视频文件');
+                throw new Error('Choose a video file first');
+            }
+
+            const fileKey = getVideoFileKey(file);
+            if (uploadedVideo?.uploadId && uploadedVideo.fileKey === fileKey) {
+                return uploadedVideo;
+            }
+            if (uploadVideoPromise) {
+                return uploadVideoPromise;
+            }
+
+            uploadVideoPromise = (async () => {
+                uploadingVideo = true;
+                uploadedVideo = null;
+                syncVideoUploadControls();
+                setVideoUploadStatus(`Uploading ${file.name}...`);
+                updateStatus('Uploading video...', 'processing');
+                setTopProgress(`正在上传视频：${file.name}`, { progress: 0 });
+
+                const formData = new FormData();
+                formData.append('session_id', sessionId);
+                formData.append('file', file, file.name);
+
+                try {
+                    const data = await uploadVideoRequest(formData, progress => {
+                        setTopProgress(`正在上传视频：${file.name}`, { progress });
+                    });
+
+                    const currentFile = getSelectedVideoFile();
+                    if (getVideoFileKey(currentFile) !== fileKey) {
+                        throw new Error('Selected video changed during upload');
+                    }
+
+                    uploadedVideo = {
+                        uploadId: data.upload_id,
+                        filename: data.filename || file.name,
+                        sizeBytes: data.size_bytes || file.size,
+                        previewUrl: uploadedVideoPreviewUrl,
+                        fileKey,
+                    };
+                    setVideoUploadStatus(
+                        `${uploadedVideo.filename} ready (${formatFileSize(uploadedVideo.sizeBytes)})`,
+                        'ok'
+                    );
+                    updateStatus('Video ready', 'connected');
+                    if (keepProgressVisible) {
+                        setTopProgress('上传完成，正在准备本地播放...', { indeterminate: true });
+                    } else {
+                        finishTopProgress('视频上传完成');
+                    }
+                    videoDropZone?.classList.add('applied');
+                    setTimeout(() => {
+                        videoDropZone?.classList.remove('applied');
+                    }, 600);
+                    return uploadedVideo;
+                } catch (error) {
+                    console.error('Video upload error:', error);
+                    setVideoUploadStatus(error.message, 'error');
+                    updateStatus('Upload failed', 'disconnected');
+                    failTopProgress(`上传失败：${error.message}`);
+                    throw error;
+                } finally {
+                    uploadingVideo = false;
+                    uploadVideoPromise = null;
+                    syncVideoUploadControls();
+                }
+            })();
+
+            return uploadVideoPromise;
         }
 
         // Enumerate and list available cameras
@@ -4158,25 +4762,11 @@ limitations under the License.
         document.querySelectorAll('.input-source-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const source = tab.getAttribute('data-source');
-                const webcamControls = document.getElementById('webcamControls');
-                const rtspControls = document.getElementById('rtspControls');
-                const rtspBetaWarning = document.getElementById('rtspBetaWarning');
-                const startBtn = document.getElementById('startBtn');
 
                 // Update active tab
                 document.querySelectorAll('.input-source-tab').forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-
-                // Show/hide controls
-                if (source === 'webcam') {
-                    webcamControls.style.display = 'block';
-                    rtspControls.style.display = 'none';
-                    rtspBetaWarning.style.display = 'none';
-                } else if (source === 'rtsp') {
-                    webcamControls.style.display = 'none';
-                    rtspControls.style.display = 'block';
-                    rtspBetaWarning.style.display = 'flex';
-                }
+                syncInputSourceControls(source);
             });
         });
 
@@ -4250,6 +4840,144 @@ limitations under the License.
                 statusDiv.style.color = '#ff6b35';
             } finally {
                 testBtn.disabled = false;
+            }
+        });
+
+        function clearSelectedVideoPreview() {
+            uploadedVideo = null;
+            uploadVideoPromise = null;
+            hideTopProgress();
+            if (uploadedVideoPreviewUrl) {
+                URL.revokeObjectURL(uploadedVideoPreviewUrl);
+                uploadedVideoPreviewUrl = null;
+            }
+        }
+
+        function handleSelectedVideoFile(file) {
+            clearSelectedVideoPreview();
+            selectedVideoFile = file || null;
+            if (!file) {
+                setVideoUploadStatus('');
+                syncVideoUploadControls();
+                return;
+            }
+
+            if (!isSupportedVideoFile(file)) {
+                selectedVideoFile = null;
+                setVideoUploadStatus('Unsupported video file type', 'error');
+                failTopProgress('请选择支持的视频文件');
+                syncVideoUploadControls();
+                return;
+            }
+
+            uploadedVideoPreviewUrl = URL.createObjectURL(file);
+            videoElement.pause();
+            videoElement.srcObject = null;
+            videoElement.src = uploadedVideoPreviewUrl;
+            videoElement.loop = false;
+            videoElement.load();
+            setVideoUploadStatus(`${file.name} selected (${formatFileSize(file.size)})`);
+            syncVideoUploadControls();
+        }
+
+        function setVideoFileInputFile(file) {
+            selectedVideoFile = file || null;
+            if (!videoFileInput || !file) {
+                handleSelectedVideoFile(file);
+                return;
+            }
+
+            try {
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                videoFileInput.files = transfer.files;
+                videoFileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch (error) {
+                console.warn('Unable to assign dropped file to native input:', error);
+                handleSelectedVideoFile(file);
+            }
+        }
+
+        function getFirstSupportedDroppedVideo(dataTransfer) {
+            const files = Array.from(dataTransfer?.files || []);
+            return files.find(isSupportedVideoFile) || files[0] || null;
+        }
+
+        function isVideoDragEvent(event) {
+            return Array.from(event.dataTransfer?.types || []).includes('Files');
+        }
+
+        videoFileInput?.addEventListener('change', () => {
+            handleSelectedVideoFile(videoFileInput.files?.[0] || null);
+        });
+
+        videoDropZone?.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            event.preventDefault();
+            if (!videoFileInput?.disabled) {
+                videoFileInput.click();
+            }
+        });
+
+        videoDropZone?.addEventListener('dragenter', event => {
+            if (!isVideoDragEvent(event)) {
+                return;
+            }
+            event.preventDefault();
+            videoDragDepth += 1;
+            if (!videoFileInput?.disabled) {
+                videoDropZone.classList.add('drag-over');
+            }
+        });
+
+        videoDropZone?.addEventListener('dragover', event => {
+            if (!isVideoDragEvent(event)) {
+                return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = videoFileInput?.disabled ? 'none' : 'copy';
+            }
+        });
+
+        videoDropZone?.addEventListener('dragleave', event => {
+            if (!isVideoDragEvent(event)) {
+                return;
+            }
+            event.preventDefault();
+            videoDragDepth = Math.max(0, videoDragDepth - 1);
+            if (videoDragDepth === 0) {
+                videoDropZone.classList.remove('drag-over');
+            }
+        });
+
+        videoDropZone?.addEventListener('drop', event => {
+            if (!isVideoDragEvent(event)) {
+                return;
+            }
+            event.preventDefault();
+            videoDragDepth = 0;
+            videoDropZone.classList.remove('drag-over');
+            if (videoFileInput?.disabled) {
+                return;
+            }
+
+            const file = getFirstSupportedDroppedVideo(event.dataTransfer);
+            if (!file || !isSupportedVideoFile(file)) {
+                setVideoUploadStatus('Drop a supported video file', 'error');
+                failTopProgress('请拖入支持的视频文件');
+                return;
+            }
+            setVideoFileInputFile(file);
+        });
+
+        uploadVideoBtn?.addEventListener('click', async () => {
+            try {
+                await uploadSelectedVideo();
+            } catch (error) {
+                console.warn('Video upload button failed:', error);
             }
         });
 
@@ -6543,17 +7271,6 @@ limitations under the License.
         }
 
         // Theme Toggle: cycles through Auto -> Light -> Dark -> Auto
-        jdLogo.addEventListener('click', () => {
-            window.location.reload();
-        });
-
-        jdLogo.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                window.location.reload();
-            }
-        });
-
         themeToggle.addEventListener('click', () => {
             const currentTheme = localStorage.getItem('theme') || 'auto';
             let nextTheme;
@@ -6933,6 +7650,7 @@ limitations under the License.
             processEvery.title = isAnalysisRunning ? '推理中不可修改，请先停止视频' : '';
             framesPerBatch.disabled = isAnalysisRunning;
             framesPerBatch.title = isAnalysisRunning ? '推理中不可修改，请先停止视频' : '';
+            syncVideoUploadControls();
         }
 
         function setVideoWaitingForStream(waiting) {
@@ -6945,6 +7663,16 @@ limitations under the License.
             const smallStopBtn = document.getElementById('smallStopBtn');
             bigBtn.classList.remove('animating', 'streaming');
             smallStopBtn.classList.remove('show');
+        }
+
+        function setStreamLifecycleState(state) {
+            streamLifecycleState = state;
+            const bigBtn = document.getElementById('bigStartBtn');
+            const smallStopBtn = document.getElementById('smallStopBtn');
+            bigBtn.disabled = state !== 'idle';
+            smallStopBtn.disabled = state === 'stopping';
+            smallStopBtn.title = state === 'stopping' ? '正在关闭当前会话' : 'Stop';
+            syncVideoUploadControls();
         }
 
         function cancelRevealVideoFallback() {
@@ -7017,12 +7745,37 @@ limitations under the License.
             return client;
         }
 
-        async function connectLiveKitRoom() {
+        function withTimeout(promise, timeoutMs, message) {
+            if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+                return promise;
+            }
+
+            let timer = null;
+            return Promise.race([
+                promise,
+                new Promise((resolve, reject) => {
+                    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+                })
+            ]).finally(() => {
+                if (timer) {
+                    clearTimeout(timer);
+                }
+            });
+        }
+
+        async function connectLiveKitRoom({ role = 'publisher', timeoutMs = null } = {}) {
+            if (livekitRoom && livekitRoomRole === role) {
+                return livekitRoom;
+            }
+            if (livekitRoom) {
+                await disconnectLiveKitRoom();
+            }
+
             const client = getLiveKitClient();
             const response = await fetch('/api/livekit/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId })
+                body: JSON.stringify({ session_id: sessionId, role })
             });
             if (!response.ok) {
                 const error = await response.json().catch(() => ({}));
@@ -7034,12 +7787,24 @@ limitations under the License.
                 adaptiveStream: false,
                 dynacast: false,
             });
-            await room.connect(config.url, config.token);
+            const connectPromise = room.connect(config.url, config.token);
+            try {
+                await withTimeout(connectPromise, timeoutMs, 'Timed out connecting LiveKit media');
+            } catch (error) {
+                connectPromise.catch(() => {});
+                try {
+                    await room.disconnect();
+                } catch (disconnectError) {
+                    console.warn('Unable to disconnect failed LiveKit room:', disconnectError);
+                }
+                throw error;
+            }
             livekitRoom = room;
+            livekitRoomRole = role;
             return room;
         }
 
-        async function publishLocalVideoTrack() {
+        async function publishLocalVideoTrack({ name = 'camera' } = {}) {
             if (!livekitRoom || !localStream) {
                 return;
             }
@@ -7051,6 +7816,7 @@ limitations under the License.
             livekitVideoTrack = mediaTrack;
             livekitVideoPublication = await livekitRoom.localParticipant.publishTrack(mediaTrack, {
                 source: client.Track.Source.Camera,
+                name,
             });
         }
 
@@ -7083,6 +7849,7 @@ limitations under the License.
             if (livekitRoom) {
                 await livekitRoom.disconnect();
                 livekitRoom = null;
+                livekitRoomRole = null;
             }
         }
 
@@ -8139,6 +8906,14 @@ limitations under the License.
                         avgLatencyValue.textContent = Math.round(data.metrics.avg_latency_ms);
                         countValue.textContent = data.metrics.total_inferences;
                         if (
+                            activeStreamSource === 'upload' &&
+                            !uploadedFirstInferenceSeen &&
+                            Number(data.metrics.total_inferences) > 0
+                        ) {
+                            uploadedFirstInferenceSeen = true;
+                            finishTopProgress('当前播放画面分析已开始');
+                        }
+                        if (
                             revealVideoAfterMetricsToken === streamStartToken &&
                             Number(data.metrics.total_inferences) > 0
                         ) {
@@ -8219,6 +8994,8 @@ limitations under the License.
                 } else if (data.type === 'status') {
                     // Don't show status messages in result balloon (too flashy)
                     // Status is already shown in the header
+                } else if (data.type === 'uploaded_video_status') {
+                    handleUploadedVideoStatus(data);
                 } else if (
                     data.type === 'background_task_started' ||
                     data.type === 'background_result_ready' ||
@@ -8364,6 +9141,10 @@ limitations under the License.
 
         // Start - dispatch to webcam or RTSP based on active tab
         async function start() {
+            if (streamLifecycleState !== 'idle') {
+                return;
+            }
+            setStreamLifecycleState('starting');
             streamStartToken += 1;
             const token = streamStartToken;
             isAnalysisRunning = false;
@@ -8376,6 +9157,8 @@ limitations under the License.
             countValue.textContent = '--';
             setVideoWaitingForStream(true);
             videoElement.srcObject = null;
+            videoElement.removeAttribute('src');
+            videoElement.load();
             if (settings.ttsEnabled) {
                 try {
                     ensureTtsAudioContext();
@@ -8395,24 +9178,33 @@ limitations under the License.
             // Show small stop button
             document.getElementById('smallStopBtn').classList.add('show');
 
-            const activeTab = document.querySelector('.input-source-tab.active');
-            const inputSource = activeTab ? activeTab.getAttribute('data-source') : 'webcam';
+            const inputSource = getActiveInputSource();
+            activeStreamSource = inputSource;
 
-            if (inputSource === 'webcam') {
-                revealVideoAfterMetricsToken = token;
-                await startWebcam(token);
-            } else if (inputSource === 'rtsp') {
-                await startRTSP(token);
+            try {
+                if (inputSource === 'webcam') {
+                    revealVideoAfterMetricsToken = token;
+                    await startWebcam(token);
+                } else if (inputSource === 'rtsp') {
+                    await startRTSP(token);
+                } else if (inputSource === 'upload') {
+                    await startUploadedVideo(token);
+                } else {
+                    activeStreamSource = null;
+                    setVideoWaitingForStream(false);
+                    resetVideoButtons();
+                }
+            } finally {
+                if (token === streamStartToken && streamLifecycleState === 'starting') {
+                    setStreamLifecycleState(isAnalysisRunning ? 'running' : 'idle');
+                }
             }
-
         }
 
         // Start LiveKit webcam publishing
         async function startWebcam(token) {
             try {
-                if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-                    connectWebSocket();
-                }
+                await waitForControlWebSocket();
 
                 updateStatus('Requesting camera...', 'processing');
 
@@ -8445,6 +9237,7 @@ limitations under the License.
 
                 if (!rtspUrl) {
                     alert('Please enter an RTSP URL');
+                    activeStreamSource = null;
                     setVideoWaitingForStream(false);
                     resetVideoButtons();
                     return;
@@ -8480,13 +9273,303 @@ limitations under the License.
                 alert('Failed to connect to RTSP stream: ' + error.message);
                 setVideoWaitingForStream(false);
                 resetVideoButtons();
+                activeStreamSource = null;
             }
         }
 
-        // Stop (handles both webcam and RTSP)
+        function stopUploadedVideoCapture() {
+            if (
+                uploadedCaptureFrameCallbackId !== null &&
+                typeof videoElement.cancelVideoFrameCallback === 'function'
+            ) {
+                videoElement.cancelVideoFrameCallback(uploadedCaptureFrameCallbackId);
+            }
+            if (uploadedCaptureAnimationFrame !== null) {
+                cancelAnimationFrame(uploadedCaptureAnimationFrame);
+            }
+            uploadedCaptureFrameCallbackId = null;
+            uploadedCaptureAnimationFrame = null;
+            uploadedCaptureCanvas = null;
+            uploadedFrameSequence = 0;
+            uploadedFrameLastSentAt = 0;
+        }
+
+        function waitForUploadedVideoData(token, timeoutMs = 10000) {
+            if (token !== streamStartToken) {
+                return Promise.reject(new Error('Video start was cancelled'));
+            }
+            if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve, reject) => {
+                let timer = null;
+                const cleanup = () => {
+                    videoElement.removeEventListener('loadeddata', onReady);
+                    videoElement.removeEventListener('error', onError);
+                    if (timer) clearTimeout(timer);
+                };
+                const onReady = () => {
+                    cleanup();
+                    if (token !== streamStartToken) {
+                        reject(new Error('Video start was cancelled'));
+                    } else {
+                        resolve();
+                    }
+                };
+                const onError = () => {
+                    cleanup();
+                    reject(new Error('Unable to decode the selected video in this browser'));
+                };
+                videoElement.addEventListener('loadeddata', onReady, { once: true });
+                videoElement.addEventListener('error', onError, { once: true });
+                timer = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Timed out preparing local video playback'));
+                }, timeoutMs);
+            });
+        }
+
+        async function prepareUploadedVideoPlayback(videoToStart, token) {
+            if (!videoToStart?.previewUrl) {
+                throw new Error('Local video preview is unavailable; choose the video again');
+            }
+            stopUploadedVideoCapture();
+            videoElement.pause();
+            videoElement.srcObject = null;
+            videoElement.src = videoToStart.previewUrl;
+            videoElement.loop = true;
+            videoElement.muted = true;
+            videoElement.load();
+            await waitForUploadedVideoData(token);
+            videoElement.currentTime = 0;
+        }
+
+        function waitForControlWebSocket(timeoutMs = 5000) {
+            if (websocket?.readyState === WebSocket.OPEN) {
+                return Promise.resolve(websocket);
+            }
+            connectWebSocket();
+            return new Promise((resolve, reject) => {
+                const startedAt = performance.now();
+                const check = () => {
+                    if (websocket?.readyState === WebSocket.OPEN) {
+                        resolve(websocket);
+                        return;
+                    }
+                    if (performance.now() - startedAt >= timeoutMs) {
+                        reject(new Error('Timed out connecting the WebUI control channel'));
+                        return;
+                    }
+                    setTimeout(check, 50);
+                };
+                check();
+            });
+        }
+
+        function startUploadedFrameRelay(token, videoToStart, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(2, Number(width) || Number(videoElement.videoWidth) || 1280);
+            canvas.height = Math.max(2, Number(height) || Number(videoElement.videoHeight) || 720);
+            const context = canvas.getContext('2d', { alpha: false });
+            if (!context) {
+                throw new Error('This browser cannot capture local video frames');
+            }
+
+            uploadedCaptureCanvas = canvas;
+            uploadedFrameSequence = 0;
+            uploadedFrameLastSentAt = 0;
+
+            const captureDisplayedFrame = (now, metadata = null) => {
+                if (token !== streamStartToken || activeStreamSource !== 'upload') {
+                    return;
+                }
+
+                const processInterval = Math.max(0.1, Number(processEvery.value) || 1);
+                const batchSize = Math.max(1, Number(framesPerBatch.value) || 1);
+                const captureIntervalMs = (processInterval * 1000) / batchSize;
+                if (
+                    now - uploadedFrameLastSentAt >= captureIntervalMs &&
+                    websocket?.readyState === WebSocket.OPEN &&
+                    websocket.bufferedAmount < 2 * 1024 * 1024
+                ) {
+                    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    uploadedFrameSequence += 1;
+                    uploadedFrameLastSentAt = now;
+                    websocket.send(JSON.stringify({
+                        type: 'uploaded_video_frame',
+                        upload_id: videoToStart.uploadId,
+                        frame_sequence: uploadedFrameSequence,
+                        media_time: Number(metadata?.mediaTime ?? videoElement.currentTime) || 0,
+                        image: canvas.toDataURL('image/jpeg', 0.82),
+                    }));
+                }
+
+                if (typeof videoElement.requestVideoFrameCallback === 'function') {
+                    uploadedCaptureFrameCallbackId = videoElement.requestVideoFrameCallback(
+                        captureDisplayedFrame
+                    );
+                } else {
+                    uploadedCaptureAnimationFrame = requestAnimationFrame(captureDisplayedFrame);
+                }
+            };
+
+            captureDisplayedFrame(performance.now());
+        }
+
+        async function startUploadedVideo(token) {
+            const startSessionId = sessionId;
+            try {
+                let videoToStart = uploadedVideo;
+                if (!videoToStart?.uploadId) {
+                    if (!getSelectedVideoFile()) {
+                        alert('Choose a video file first');
+                        failTopProgress('请选择视频文件');
+                        activeStreamSource = null;
+                        setVideoWaitingForStream(false);
+                        resetVideoButtons();
+                        updatePromptAvailability();
+                        return;
+                    }
+                    videoToStart = await uploadSelectedVideo({ keepProgressVisible: true });
+                }
+
+                if (!videoToStart?.uploadId) {
+                    alert('Video upload did not return an upload id');
+                    failTopProgress('上传失败：没有返回 upload id');
+                    activeStreamSource = null;
+                    setVideoWaitingForStream(false);
+                    resetVideoButtons();
+                    updatePromptAvailability();
+                    return;
+                }
+
+                if (token !== streamStartToken || streamLifecycleState === 'stopping') {
+                    throw new Error('Video start was cancelled');
+                }
+
+                if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                    connectWebSocket();
+                }
+
+                uploadedFirstInferenceSeen = false;
+                countValue.textContent = '0';
+                setTopProgress('正在准备本地视频...', { indeterminate: true });
+                updateStatus('Preparing local video...', 'processing');
+                const requestVideoStart = video => fetch('/api/video/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: startSessionId,
+                        upload_id: video.uploadId,
+                    })
+                });
+
+                let response = await requestVideoStart(videoToStart);
+                let data = await response.json().catch(() => ({}));
+                if (
+                    response.status === 404 &&
+                    getSelectedVideoFile() &&
+                    token === streamStartToken &&
+                    streamLifecycleState !== 'stopping'
+                ) {
+                    uploadedVideo = null;
+                    videoToStart = await uploadSelectedVideo({ keepProgressVisible: true });
+                    response = await requestVideoStart(videoToStart);
+                    data = await response.json().catch(() => ({}));
+                }
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to start uploaded video');
+                }
+                if (token !== streamStartToken || streamLifecycleState === 'stopping') {
+                    throw new Error('Video start was cancelled');
+                }
+                if (data.transport !== 'livekit-upload-relay') {
+                    throw new Error('Server did not enable the LiveKit upload relay');
+                }
+
+                await prepareUploadedVideoPlayback(videoToStart, token);
+                if (token !== streamStartToken) {
+                    throw new Error('Video start was cancelled');
+                }
+
+                revealVideoWhenReady(token);
+                isAnalysisRunning = true;
+                updatePromptAvailability();
+                setTopProgress('正在通过 7099 将当前画面送入 LiveKit...', { indeterminate: true });
+                startUploadedFrameRelay(
+                    token,
+                    videoToStart,
+                    data.capture_width,
+                    data.capture_height
+                );
+                const playPromise = videoElement.play();
+                if (playPromise && typeof playPromise.then === 'function') {
+                    await playPromise;
+                }
+                setVideoUploadStatus(
+                    `${videoToStart.filename} playing locally through the LiveKit relay`,
+                    'ok'
+                );
+                setTopProgress('本地视频正在播放，等待第一次 VLM 结果...', { indeterminate: true });
+                updateStatus('Analyzing displayed video...', 'processing');
+            } catch (error) {
+                console.error('Error starting uploaded video:', error);
+                isAnalysisRunning = false;
+                stopUploadedVideoCapture();
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                    localStream = null;
+                }
+                videoElement.pause();
+                await disconnectLiveKitRoom();
+                try {
+                    await fetch('/api/video/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: startSessionId })
+                    });
+                } catch (stopError) {
+                    console.warn('Unable to stop uploaded video after start failure:', stopError);
+                }
+                const wasCancelled = token !== streamStartToken || streamLifecycleState === 'stopping';
+                if (!wasCancelled) {
+                    updateStatus(`Error: ${error.message}`, 'disconnected');
+                    failTopProgress(`启动失败：${error.message}`);
+                    alert('Failed to start uploaded video: ' + error.message);
+                }
+                setVideoWaitingForStream(false);
+                resetVideoButtons();
+                activeStreamSource = null;
+                updatePromptAvailability();
+            }
+        }
+
+        // Stop webcam, RTSP, or uploaded-video analysis.
         async function stop({ clearConversation = false } = {}) {
+            if (streamLifecycleState === 'stopping' || streamLifecycleState === 'idle') {
+                return;
+            }
+            setStreamLifecycleState('stopping');
+            setTopProgress('正在关闭当前会话...', { indeterminate: true });
+            try {
+                await stopActiveStream({ clearConversation });
+            } finally {
+                activeStreamSource = null;
+                resetVideoButtons();
+                setStreamLifecycleState('idle');
+                hideTopProgress();
+                syncInputSourceControls();
+            }
+        }
+
+        async function stopActiveStream({ clearConversation = false } = {}) {
+            const stopSessionId = sessionId;
             streamStartToken += 1;
             isAnalysisRunning = false;
+            uploadedFirstInferenceSeen = false;
+            stopUploadedVideoCapture();
+            videoElement.pause();
             revealVideoAfterMetricsToken = null;
             cancelRevealVideoFallback();
             mobileVoiceMode = false;
@@ -8497,26 +9580,32 @@ limitations under the License.
                 await stopSpeech({ sendEnd: false, sendPrompt: false });
             }
 
-            // Reset overlay buttons
-            resetVideoButtons();
-
             if (fadeTimeout) {
                 clearTimeout(fadeTimeout);
                 fadeTimeout = null;
             }
 
-            const activeTab = document.querySelector('.input-source-tab.active');
-            const inputSource = activeTab ? activeTab.getAttribute('data-source') : 'webcam';
+            const inputSource = activeStreamSource || getActiveInputSource();
 
             if (inputSource === 'rtsp') {
                 try {
                     await fetch('/api/rtsp/stop', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ session_id: sessionId })
+                        body: JSON.stringify({ session_id: stopSessionId })
                     });
                 } catch (error) {
                     console.warn('Unable to stop RTSP session:', error);
+                }
+            } else if (inputSource === 'upload') {
+                try {
+                    await fetch('/api/video/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: stopSessionId })
+                    });
+                } catch (error) {
+                    console.warn('Unable to stop uploaded video session:', error);
                 }
             }
 
@@ -8529,6 +9618,9 @@ limitations under the License.
             }
 
             videoElement.srcObject = null;
+            videoElement.removeAttribute('src');
+            videoElement.loop = false;
+            videoElement.load();
             setVideoWaitingForStream(false);
 
             // Reset session after local tracks are stopped so the backend can cancel
@@ -8546,6 +9638,12 @@ limitations under the License.
             if (testRtspBtn) {
                 testRtspBtn.disabled = false;
             }
+            if (inputSource === 'upload' && uploadedVideo) {
+                setVideoUploadStatus(
+                    `${uploadedVideo.filename} ready (${formatFileSize(uploadedVideo.sizeBytes)})`,
+                    'ok'
+                );
+            }
         }
 
         // Sidebar start/stop buttons removed - using overlay buttons instead
@@ -8555,6 +9653,8 @@ limitations under the License.
         // Load on page load
         window.addEventListener('load', async () => {
             connectWebSocket();
+            syncInputSourceControls();
+            syncVideoUploadControls();
 
             // Fallback for older servers that do not send server_config.
             setTimeout(() => {

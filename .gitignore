@@ -73,13 +73,40 @@ agent-workspace/
 /services/scripts/run_4gpu.sh
 /services/webinfer/scripts/start_4gpu_models_adapter.sh
 
-# Local credentials and certificates
+# Local credentials and deployment secrets
 .env
 .env.*
+*.env
+.envrc
+.direnv/
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+!*.env.example
+!*.env.sample
+!*.env.template
+**/.htpasswd
+**/.htpasswd.*
+**/.initial-credentials
+**/livekit.env
+**/tls/
+
+# Private keys, certificates, and local credential stores
 *.pem
 *.key
 *.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+id_rsa
+id_ed25519
 *.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 *.db
 
 # Generated test outputs are not uploaded from this combined workspace

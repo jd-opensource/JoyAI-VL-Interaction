@@ -23,12 +23,12 @@ If a default directory does not exist or is empty, download the weights with the
 ## Core Installation
 
 - `install.sh` creates the virtual environment with `uv venv`, then downloads and installs dependencies with `uv pip install`.
-- `install.sh` installs the WebUI in editable mode.
-- `install.sh` pins `vllm==0.22.0`.
-- `install.sh` uses `constraints.txt` by default to constrain vLLM-related transitive Web stack dependencies.
+- `install.sh` installs the WebUI in editable mode, including the LiveKit Python packages.
+- `install.sh` does not install vLLM by default; use `--with-vllm` only when you want this environment to include the model runtime too.
+- `install.sh` uses `constraints.txt` by default. The constraints matter when `--with-vllm` is enabled.
 - This install directory standardizes on Python 3.12.
-- `vllm==0.22.0` supports Python `>=3.10,<3.15`, but this project installs and tests it with Python 3.12. It pulls in heavy PyTorch/CUDA dependencies, so a clean new virtual environment is recommended.
-- The WebUI template itself does not declare FastAPI directly. FastAPI is installed when optional adapters are enabled, and `vllm==0.22.0` may also install FastAPI through transitive dependencies.
+- `vllm==0.22.0` supports Python `>=3.10,<3.15`, but this project installs and tests it with Python 3.12. It pulls in heavy PyTorch/CUDA dependencies, so keep it out of a WebUI-only environment unless you need it locally.
+- The WebUI template itself does not declare FastAPI directly. FastAPI is installed when optional adapters are enabled, and `vllm==0.22.0` may also install FastAPI through transitive dependencies when `--with-vllm` is used.
 
 ### vLLM Web Stack Constraints
 
@@ -60,12 +60,13 @@ These options install only lightweight adapter/API packages:
 - `--with-tts`: install the FastAPI TTS WebSocket adapter service.
 - `--with-background-agent`: install the FastAPI Codex background agent API.
 - `--with-all`: install all optional packages above.
+- `--with-vllm`: additionally install `vllm==0.22.0` into this environment.
 
 These packages depend on common Web service libraries such as FastAPI, Uvicorn, WebSockets, HTTPX, and Pydantic. They do not install ASR nightly vLLM, vLLM Omni, model weights, or CUDA-specific wheels.
 
 ## ASR Runtime Environment
 
-`services/asr/README.md` uses Python 3.12, vLLM nightly, and the CUDA 12.9 index. Unless you explicitly want to replace the pinned `vllm==0.22.0` in the main environment, do not mix that runtime into the core WebUI environment.
+`services/asr/README.md` uses Python 3.12, vLLM nightly, and the CUDA 12.9 index. Do not mix that runtime into the WebUI-only environment.
 
 Install the ASR adapter:
 

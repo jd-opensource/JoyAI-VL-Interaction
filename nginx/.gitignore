@@ -1,0 +1,4 @@
+.htpasswd
+.initial-credentials
+livekit.env
+tls/

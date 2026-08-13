@@ -61,7 +61,7 @@ Start only the core services — video inference and the web UI:
 When using `services/scripts/run.sh`, startup is not complete until the final WebUI process has started.
 Press `Ctrl+C` in that terminal to stop the services started by the orchestrator.
 
-Open your browser at: `https://127.0.0.1:8099`
+Open your browser at: `https://127.0.0.1:7099`
 
 ## Full Setup (all services)
 
@@ -136,7 +136,7 @@ curl http://127.0.0.1:8992/health   # TTS (optional)
 curl http://127.0.0.1:8079/health   # background-agent (optional)
 ```
 
-The web UI is accessible at `https://127.0.0.1:8099` (accept the self-signed certificate warning).
+The web UI is accessible at `https://127.0.0.1:7099` (accept the self-signed certificate warning).
 
 ## RTSP Local Stream Testing
 

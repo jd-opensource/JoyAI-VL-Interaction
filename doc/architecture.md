@@ -25,7 +25,7 @@ The system is composed of five services arranged in a hub-and-spoke pattern arou
                           ┌─────────┴────────┐
                           │     webui        │
                           │  (Browser + WS)  │
-                          │   :8099          │
+                          │   :7099          │
                           └──────────────────┘
 ```
 
@@ -58,7 +58,7 @@ The system is composed of five services arranged in a hub-and-spoke pattern arou
 | 8070 | webinfer (adapter) | HTTP |
 | 7060 | webinfer (main VLM vLLM) | HTTP (internal) |
 | 8065 | webinfer (summary VLM vLLM) | HTTP (internal) |
-| 8099 | webui | HTTPS + WebSocket |
+| 7099 | webui | HTTPS + WebSocket |
 | 8994 | asr (adapter) | HTTP + WebSocket |
 | 8993 | asr (vLLM ASR) | HTTP (internal) |
 | 8992 | tts (adapter) | HTTP + WebSocket |

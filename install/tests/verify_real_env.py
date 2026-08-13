@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+import importlib.util
+import os
 import shutil
 import sys
 
@@ -18,7 +20,6 @@ BASE_MODULES = [
     "openai",
     "PIL",
     "psutil",
-    "vllm",
 ]
 
 OPTIONAL_MODULES = {
@@ -132,13 +133,19 @@ def main() -> int:
     for module in BASE_MODULES + OPTIONAL_MODULES[case]:
         import_module(module)
 
-    import vllm
+    expect_vllm = os.environ.get("EXPECT_VLLM", "0") == "1"
+    if importlib.util.find_spec("vllm") is not None:
+        import vllm
 
-    version = getattr(vllm, "__version__", "")
-    print(f"vllm version: {version}")
-    if version != "0.22.0":
-        raise RuntimeError(f"expected vllm 0.22.0, got {version!r}")
-    verify_vllm_web_stack()
+        version = getattr(vllm, "__version__", "")
+        print(f"vllm version: {version}")
+        if version != "0.22.0":
+            raise RuntimeError(f"expected vllm 0.22.0, got {version!r}")
+        verify_vllm_web_stack()
+    elif expect_vllm:
+        raise RuntimeError("expected vllm 0.22.0, but vllm is not installed")
+    else:
+        print("vllm not installed; skipping vLLM Web stack checks")
 
     for command in ["joy-interaction-webui", "joy-interaction-webui-stop", *OPTIONAL_COMMANDS[case]]:
         resolved = shutil.which(command)

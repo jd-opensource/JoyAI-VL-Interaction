@@ -25,7 +25,7 @@ JoyAI-VL-Interaction 是一个围绕视觉语言交互模型构建的实时视�
                           ┌─────────┴────────┐
                           │     webui        │
                           │  (Browser + WS)  │
-                          │   :8099          │
+                          │   :7099          │
                           └──────────────────┘
 ```
 
@@ -58,7 +58,7 @@ JoyAI-VL-Interaction 是一个围绕视觉语言交互模型构建的实时视�
 | 8070 | webinfer（适配器） | HTTP |
 | 7060 | webinfer（主 VLM vLLM） | HTTP（内部） |
 | 8065 | webinfer（摘要 VLM vLLM） | HTTP（内部） |
-| 8099 | webui | HTTPS + WebSocket |
+| 7099 | webui | HTTPS + WebSocket |
 | 8994 | asr（适配器） | HTTP + WebSocket |
 | 8993 | asr（vLLM ASR） | HTTP（内部） |
 | 8992 | tts（适配器） | HTTP + WebSocket |

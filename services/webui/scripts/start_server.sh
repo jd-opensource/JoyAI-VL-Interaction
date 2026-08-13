@@ -4,17 +4,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SERVICES_DIR="$(cd "${PROJECT_ROOT}/.." && pwd)"
+WEBUI_HOST="${WEBUI_HOST:-0.0.0.0}"
+WEBUI_PORT="${WEBUI_PORT:-7099}"
 cd "${PROJECT_ROOT}"
 
 LIVEKIT_VERSION="${LIVEKIT_VERSION:-1.13.2}"
 LIVEKIT_SIGNAL_PORT="${LIVEKIT_SIGNAL_PORT:-8298}"
 LIVEKIT_UDP_PORT="${LIVEKIT_UDP_PORT:-8299}"
+LIVEKIT_TCP_PORT="${LIVEKIT_TCP_PORT:-${LIVEKIT_UDP_PORT}}"
+LIVEKIT_USE_EXTERNAL_IP="${LIVEKIT_USE_EXTERNAL_IP:-false}"
+LIVEKIT_RTC_IP="${LIVEKIT_RTC_IP:-}"
 LIVEKIT_API_KEY="${LIVEKIT_API_KEY:-joyvl}"
 LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-joyvl-secret-123456789012345678901234}"
 LIVEKIT_DIR="${LIVEKIT_DIR:-${PROJECT_ROOT}/.livekit}"
 LIVEKIT_BIN="${LIVEKIT_DIR}/livekit-server"
 LIVEKIT_CONFIG="${LIVEKIT_DIR}/livekit.yaml"
 LIVEKIT_LOG="${LIVEKIT_DIR}/livekit.log"
+
+case "${LIVEKIT_USE_EXTERNAL_IP}" in
+  true|false) ;;
+  *)
+    echo "LIVEKIT_USE_EXTERNAL_IP must be true or false." >&2
+    exit 1
+    ;;
+esac
 
 detect_node_ip() {
   local node_ip probe_ip
@@ -100,6 +113,19 @@ write_livekit_config() {
     exit 1
   fi
 
+  if [ -n "${LIVEKIT_RTC_IP}" ] && command -v ip >/dev/null 2>&1; then
+    if ! ip -o -4 addr show | awk -v target="${LIVEKIT_RTC_IP}" '
+      {
+        split($4, address, "/")
+        if (address[1] == target) found = 1
+      }
+      END { exit !found }
+    '; then
+      echo "LIVEKIT_RTC_IP is not assigned to a local interface: ${LIVEKIT_RTC_IP}" >&2
+      exit 1
+    fi
+  fi
+
   mkdir -p "${LIVEKIT_DIR}"
   cat >"${LIVEKIT_CONFIG}" <<EOF
 port: ${LIVEKIT_SIGNAL_PORT}
@@ -107,10 +133,19 @@ bind_addresses:
   - 127.0.0.1
 rtc:
   udp_port: ${LIVEKIT_UDP_PORT}
-  tcp_port: 0
-  use_external_ip: false
+  tcp_port: ${LIVEKIT_TCP_PORT}
+  use_external_ip: ${LIVEKIT_USE_EXTERNAL_IP}
   node_ip: ${node_ip}
-  allow_tcp_fallback: false
+EOF
+  if [ -n "${LIVEKIT_RTC_IP}" ]; then
+    cat >>"${LIVEKIT_CONFIG}" <<EOF
+  ips:
+    includes:
+      - ${LIVEKIT_RTC_IP}/32
+EOF
+  fi
+  cat >>"${LIVEKIT_CONFIG}" <<EOF
+  allow_tcp_fallback: true
 keys:
   ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
 logging:
@@ -130,7 +165,7 @@ start_livekit() {
     return
   fi
 
-  echo "Starting LiveKit server on 127.0.0.1:${LIVEKIT_SIGNAL_PORT}, UDP ${LIVEKIT_UDP_PORT}, node IP ${node_ip}..."
+  echo "Starting LiveKit server on 127.0.0.1:${LIVEKIT_SIGNAL_PORT}, UDP ${LIVEKIT_UDP_PORT}, TCP ${LIVEKIT_TCP_PORT}, node IP ${node_ip}, RTC IP ${LIVEKIT_RTC_IP:-all local interfaces}..."
   LIVEKIT_API_KEY="${LIVEKIT_API_KEY}" LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET}" \
     "${LIVEKIT_BIN}" --config "${LIVEKIT_CONFIG}" --node-ip "${node_ip}" >"${LIVEKIT_LOG}" 2>&1 &
   LIVEKIT_PID="$!"
@@ -185,12 +220,21 @@ start_livekit
 
 export LIVEKIT_INTERNAL_URL="${LIVEKIT_INTERNAL_URL:-ws://127.0.0.1:${LIVEKIT_SIGNAL_PORT}}"
 export LIVEKIT_API_KEY LIVEKIT_API_SECRET
+NO_PROXY="${NO_PROXY:-${no_proxy:-localhost,127.0.0.1,::1}}"
+for host in localhost 127.0.0.1 ::1; do
+  case ",${NO_PROXY}," in
+    *",${host},"*) ;;
+    *) NO_PROXY="${NO_PROXY},${host}" ;;
+  esac
+done
+export NO_PROXY
+export no_proxy="${NO_PROXY}"
 
 PYTHONPATH="src${PYTHONPATH:+:$PYTHONPATH}" python -m joy_interaction_webui.server \
   --ssl-cert cert.pem \
   --ssl-key key.pem \
-  --host 0.0.0.0 \
-  --port 8199 \
+  --host "${WEBUI_HOST}" \
+  --port "${WEBUI_PORT}" \
   --model streaming-infer-adapter \
   --api-base http://127.0.0.1:8070/v1 \
   "$@"

@@ -83,9 +83,9 @@ cd JoyAI-VL-Interaction
 ./services/scripts/run.sh minimal
 ```
 
-Then open `https://127.0.0.1:8199` in your browser.
+Then open `https://127.0.0.1:7099` in your browser.
 
-The WebUI automatically downloads and starts LiveKit Server 1.13.2. For remote access, only one TCP port (default `8199`, for WebUI HTTPS and proxied LiveKit signaling) and one UDP port (default `8299`, for WebRTC media) need to be exposed. LiveKit's internal signaling port, `TCP 8298`, listens on `127.0.0.1` only and does not need to be exposed. See the [WebUI documentation](services/webui/README.md#livekit-server-and-network-ports) for version, download, and port configuration details.
+The WebUI automatically downloads and starts LiveKit Server 1.13.2. For remote access, expose `TCP 7099` for WebUI HTTPS and proxied LiveKit signaling, `UDP 8299` for WebRTC media, and preferably `TCP 8299` for WebRTC fallback. LiveKit's internal signaling port, `TCP 8298`, listens on `127.0.0.1` only and does not need to be exposed. See the [WebUI documentation](services/webui/README.md#livekit-server-and-network-ports) for version, download, and port configuration details.
 
 👉 For the full setup (ASR, TTS, background agent) and configuration details, see the [Getting Started Guide](doc/getting_started.md).
 
