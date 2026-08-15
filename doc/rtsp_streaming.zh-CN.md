@@ -158,6 +158,41 @@ RTSP_URL=rtsp://127.0.0.1:8554/test bash ./rtsp/rtsp.sh ./videos/demo.mp4
 
 如果输入视频没有音轨，并且你的 `ffmpeg` 在 `-c:a aac` 上报错，可以移除音频选项，或添加 `-an`。
 
+## 低 CPU 占用模式
+
+上面的脚本会在推流时实时缩放并重新编码视频，兼容性较好，但会持续占用 CPU。如果测试视频是固定文件，可以先离线预处理一次，再使用流复制（copy）模式推流，从而显著降低推流过程的 CPU 占用。
+
+先把视频转换为 H.264，并将宽度限制为最大 1280。WebUI 的 RTSP 输入只使用视频轨，因此这里同时移除音轨：
+
+```bash
+ffmpeg \
+  -i ./videos/example.mp4 \
+  -vf "scale='min(1280,iw)':-2" \
+  -c:v libx264 \
+  -preset medium \
+  -crf 23 \
+  -pix_fmt yuv420p \
+  -an \
+  ./videos/example-h264.mp4
+```
+
+预处理完成后，使用 `-c:v copy` 循环推流：
+
+```bash
+ffmpeg \
+  -re \
+  -stream_loop -1 \
+  -i ./videos/example-h264.mp4 \
+  -map 0:v:0 \
+  -c:v copy \
+  -an \
+  -f rtsp \
+  -rtsp_transport udp \
+  rtsp://127.0.0.1:8554/fire1
+```
+
+流复制模式不会进行缩放或编码，因此不能与 `-vf`、`-preset`、`-tune`、`-b:v` 等转码参数同时使用。如果源文件已经是兼容的 H.264 视频且分辨率合适，可以跳过预处理，直接使用上述 copy 命令。
+
 ## 在 WebUI 中使用
 
 启动 MediaMTX 和 `ffmpeg` 推流脚本后，在 WebUI 的 RTSP 输入框填写：

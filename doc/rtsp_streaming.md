@@ -158,6 +158,41 @@ The main `ffmpeg` parameters are:
 
 If the input video has no audio track and your `ffmpeg` build errors on `-c:a aac`, remove the audio option or add `-an`.
 
+## Low-CPU Mode
+
+The script above scales and re-encodes the video while streaming. This provides good compatibility, but continuously consumes CPU. For a fixed test video, preprocess it once and then stream it in copy mode to significantly reduce CPU usage while streaming.
+
+First, convert the video to H.264 and limit its width to 1280. The WebUI RTSP input only uses the video track, so this command also removes the audio track:
+
+```bash
+ffmpeg \
+  -i ./videos/example.mp4 \
+  -vf "scale='min(1280,iw)':-2" \
+  -c:v libx264 \
+  -preset medium \
+  -crf 23 \
+  -pix_fmt yuv420p \
+  -an \
+  ./videos/example-h264.mp4
+```
+
+After preprocessing, loop and publish the video with `-c:v copy`:
+
+```bash
+ffmpeg \
+  -re \
+  -stream_loop -1 \
+  -i ./videos/example-h264.mp4 \
+  -map 0:v:0 \
+  -c:v copy \
+  -an \
+  -f rtsp \
+  -rtsp_transport udp \
+  rtsp://127.0.0.1:8554/fire1
+```
+
+Copy mode does not scale or encode the video, so it cannot be combined with transcoding options such as `-vf`, `-preset`, `-tune`, or `-b:v`. If the source file is already compatible H.264 at a suitable resolution, you can skip preprocessing and use the copy command directly.
+
 ## Use It in WebUI
 
 After MediaMTX and the `ffmpeg` push are running, enter this RTSP URL in the WebUI RTSP input:
