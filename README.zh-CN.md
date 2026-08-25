@@ -42,7 +42,7 @@
 
 ## 🔥 最新动态
 
-- **[2026-08-11]** ☁️ JoyAI-VL-Interaction 已上线京东云，现可通过 API 调用。[JoyBuilder MaaS 服务一键直达](https://www.jdcloud.com/cn/products/joybuildmaas)，查看[获取并配置 API Key](https://docs.jdcloud.com/cn/jdaip/Get%20API-Key)及 [JoyBuilder 模型开发平台 2.0 帮助文档](https://docs.jdcloud.com/cn/jdaip/preparation)。项目资源：[GitHub](https://github.com/jd-opensource/JoyAI-VL-Interaction) | [Hugging Face](https://huggingface.co/jdopensource/JoyAI-VL-Interaction)。
+- **[2026-08-11]** ☁️ JoyAI-VL-Interaction 已上线京东云，现可通过 API 调用。[JoyBuilder MaaS 服务一键直达](https://www.jdcloud.com/cn/products/joybuildmaas)，查看[获取并配置 API Key](https://docs.jdcloud.com/cn/jdaip/Get%20API-Key)，并按照 [API 使用文档](doc/api.zh-CN.md)完成调用。如需了解平台详情，请参阅 [JoyBuilder 模型开发平台 2.0 帮助文档](https://docs.jdcloud.com/cn/jdaip/preparation)。项目资源：[GitHub](https://github.com/jd-opensource/JoyAI-VL-Interaction) | [Hugging Face](https://huggingface.co/jdopensource/JoyAI-VL-Interaction)。
 - **[2026-08-03]** 🤗 JoyAI-VL-Interaction 量化模型已发布到 Hugging Face：[INT4](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT4)、[INT8](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-INT8)、[FP8](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-FP8) 和 [NVFP4](https://huggingface.co/jdopensource/JoyAI-VL-Interaction-NVFP4)。
 - **[2026-07-22]** 🤗 在线 + 离线统一模型 —— 单一全能模型，同时擅长实时在线（流式）交互与离线视频理解，并可自主选择是否 delegation；主交互模型默认指向 [`jdopensource/JoyAI-VL-Interaction`](https://huggingface.co/jdopensource/JoyAI-VL-Interaction)，下载和部署脚本已同步更新。
 - **[2026-07-21]** 🚀 支持 LiveKit 部署，避免对外开放大量服务端口；可切换到 [`livekit`](https://github.com/jd-opensource/JoyAI-VL-Interaction/tree/livekit) 分支。
