@@ -160,6 +160,126 @@ def reset_chunk_state() -> dict[str, Any]:
     }
 
 
+_APPEND_ONLY_CHUNK_FIELDS = (
+    "messages",
+    "response_records",
+    "image_paths",
+    "frame_time_ranges",
+    "summarizer_frame_cache",
+    "api_msg_cache",
+)
+
+
+def _snapshot_append_only_chunk_state(chunk: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "frame_count": chunk["frame_count"],
+        "turn_count": chunk["turn_count"],
+        "lengths": {
+            field: len(chunk[field])
+            for field in _APPEND_ONLY_CHUNK_FIELDS
+        },
+    }
+
+
+def _restore_append_only_chunk_state(
+    chunk: dict[str, Any],
+    snapshot: dict[str, Any],
+) -> None:
+    chunk["frame_count"] = snapshot["frame_count"]
+    chunk["turn_count"] = snapshot["turn_count"]
+    for field, length in snapshot["lengths"].items():
+        del chunk[field][length:]
+
+
+def _internal_image_count(messages: list[dict[str, Any]]) -> int:
+    count = 0
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        count += sum(
+            1
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "image"
+        )
+    return count
+
+
+def _limit_internal_messages(
+    messages: list[dict[str, Any]],
+    *,
+    max_turns: int = 0,
+    max_images: int = 0,
+) -> list[dict[str, Any]]:
+    """Return a recent prompt window without mutating the session history.
+
+    A turn starts with a user message and includes all following messages up to
+    the next user message. Limits less than or equal to zero are disabled.
+    When the newest retained turn alone exceeds ``max_images``, its oldest
+    images are removed while text and the most recent images are preserved.
+    """
+
+    max_turns = max(0, int(max_turns or 0))
+    max_images = max(0, int(max_images or 0))
+    if max_turns == 0 and max_images == 0:
+        return list(messages)
+
+    leading: list[dict[str, Any]] = []
+    turns: list[list[dict[str, Any]]] = []
+    for message in messages:
+        if message.get("role") == "user":
+            turns.append([message])
+        elif turns:
+            turns[-1].append(message)
+        else:
+            leading.append(message)
+
+    if max_turns > 0 and len(turns) > max_turns:
+        turns = turns[-max_turns:]
+
+    if max_images > 0:
+        total_images = _internal_image_count(
+            [message for turn in turns for message in turn]
+        )
+        while total_images > max_images and len(turns) > 1:
+            removed = turns.pop(0)
+            total_images -= _internal_image_count(removed)
+
+    limited = leading + [message for turn in turns for message in turn]
+    if max_images <= 0:
+        return limited
+
+    images_to_remove = max(0, _internal_image_count(limited) - max_images)
+    if images_to_remove == 0:
+        return limited
+
+    result: list[dict[str, Any]] = []
+    for message in limited:
+        content = message.get("content")
+        if images_to_remove == 0 or not isinstance(content, list):
+            result.append(message)
+            continue
+        new_content: list[Any] = []
+        changed = False
+        for item in content:
+            if (
+                images_to_remove > 0
+                and isinstance(item, dict)
+                and item.get("type") == "image"
+            ):
+                images_to_remove -= 1
+                changed = True
+                continue
+            new_content.append(item)
+        if changed:
+            new_message = dict(message)
+            new_message["content"] = new_content
+            result.append(new_message)
+        else:
+            result.append(message)
+    return result
+
+
 def _parse_start_second(time_range: Optional[str]) -> float:
     if not time_range:
         return -1.0
@@ -518,6 +638,8 @@ class AdapterConfig:
     frame_seconds: float = 1.0
     max_pixels: int = 262144
     main_max_tokens: int = 128
+    main_max_prompt_turns: int = 0
+    main_max_prompt_images: int = 0
     main_temperature: float = 0.8
     main_top_p: float = 0.9
     main_top_k: int = 40
@@ -1112,6 +1234,7 @@ class StreamingInferAdapter:
                 time_ranges.append(self._time_range_for_frame(state.frame_count + i))
         time_range = _format_turn_time_range(time_ranges)
 
+        session_frame_counter_snapshot = state.session_frame_counter
         image_paths = [self._resolve_frame_ref(ref, state) for ref in image_refs]
         LOGGER.info(
             "[%s] turn=%d frames=%d(+%d) chunk=%d time=%s prompt=%r",
@@ -1182,6 +1305,16 @@ class StreamingInferAdapter:
             state.chunk_index += 1
             state.query_in_current_chunk = bool(query_text)
 
+        turn_state_snapshot = {
+            "frame_count": state.frame_count,
+            "turn_count": state.turn_count,
+            "session_frame_counter": session_frame_counter_snapshot,
+            "current_chunk": _snapshot_append_only_chunk_state(state.current_chunk),
+            "async_summary_segment": _snapshot_append_only_chunk_state(
+                state.async_summary_segment
+            ),
+        }
+
         for tr, ip in zip(time_ranges, image_paths):
             state.frame_count += 1
             state.current_chunk["image_paths"].append(str(ip))
@@ -1243,47 +1376,68 @@ class StreamingInferAdapter:
             if self.config.save_model_inputs:
                 model_input_record = turn_model_input_record
         else:
-            t_prompt_build_start = time.perf_counter()
-            internal_messages, prefix_content = self._build_main_internal_messages(state)
-            api_messages = self._build_cached_api_messages(state, internal_messages)
-            generation_kwargs = self._main_generation_kwargs(payload)
-            http_messages = self._build_main_http_messages(api_messages, payload)
-            turn_model_input_record = build_model_input_record(
-                chunk_index=state.chunk_index,
-                messages=http_messages,
-                frame_count=state.current_chunk["frame_count"],
-                model=model_name,
-                generation_kwargs=generation_kwargs,
-                image_paths=state.current_chunk["image_paths"],
-                frame_time_ranges=state.current_chunk["frame_time_ranges"],
-                prefix_content=prefix_content,
-            )
-            if self.config.save_model_inputs:
-                model_input_record = turn_model_input_record
-            chunk_start_model_input_path = self._maybe_save_chunk_start_model_input(
-                state,
-                turn_count,
-                time_range,
-                turn_model_input_record,
-            )
-            t_prompt_build_end = time.perf_counter()
-            inference_start = time.time()
-            raw_text, usage = await self._call_main_model(
-                payload,
-                api_messages,
-                client=client,
-                model_name=model_name,
-                session_state=state,
-                generation_kwargs=generation_kwargs,
-                http_messages=http_messages,
-            )
-            inference_time = time.time() - inference_start
-            t_inference_end = time.perf_counter()
-            generated_text = (
-                normalize_model_output(raw_text)
-                if self.config.normalize_output
-                else (raw_text or "").strip()
-            )
+            try:
+                t_prompt_build_start = time.perf_counter()
+                internal_messages, prefix_content = self._build_main_internal_messages(state)
+                api_messages = self._build_cached_api_messages(state, internal_messages)
+                generation_kwargs = self._main_generation_kwargs(payload)
+                http_messages = self._build_main_http_messages(api_messages, payload)
+                turn_model_input_record = build_model_input_record(
+                    chunk_index=state.chunk_index,
+                    messages=http_messages,
+                    frame_count=state.current_chunk["frame_count"],
+                    model=model_name,
+                    generation_kwargs=generation_kwargs,
+                    image_paths=state.current_chunk["image_paths"],
+                    frame_time_ranges=state.current_chunk["frame_time_ranges"],
+                    prefix_content=prefix_content,
+                )
+                if self.config.save_model_inputs:
+                    model_input_record = turn_model_input_record
+                t_prompt_build_end = time.perf_counter()
+                inference_start = time.time()
+                raw_text, usage = await self._call_main_model(
+                    payload,
+                    api_messages,
+                    client=client,
+                    model_name=model_name,
+                    session_state=state,
+                    generation_kwargs=generation_kwargs,
+                    http_messages=http_messages,
+                )
+                inference_time = time.time() - inference_start
+                t_inference_end = time.perf_counter()
+                generated_text = (
+                    normalize_model_output(raw_text)
+                    if self.config.normalize_output
+                    else (raw_text or "").strip()
+                )
+                chunk_start_model_input_path = self._maybe_save_chunk_start_model_input(
+                    state,
+                    turn_count,
+                    time_range,
+                    turn_model_input_record,
+                )
+            except Exception:
+                state.frame_count = turn_state_snapshot["frame_count"]
+                state.turn_count = turn_state_snapshot["turn_count"]
+                state.session_frame_counter = turn_state_snapshot[
+                    "session_frame_counter"
+                ]
+                _restore_append_only_chunk_state(
+                    state.current_chunk,
+                    turn_state_snapshot["current_chunk"],
+                )
+                _restore_append_only_chunk_state(
+                    state.async_summary_segment,
+                    turn_state_snapshot["async_summary_segment"],
+                )
+                LOGGER.warning(
+                    "[%s] rolled back turn=%d after main-model failure",
+                    state.session_id,
+                    turn_count,
+                )
+                raise
 
         self._execute_pending_qa_archive(state)
 
@@ -1544,7 +1698,11 @@ class StreamingInferAdapter:
         prefix_content = "\n\n".join(
             part for part in (static_content, dynamic_content) if part
         )
-        all_messages = list(state.current_chunk["messages"])
+        all_messages = _limit_internal_messages(
+            state.current_chunk["messages"],
+            max_turns=self.config.main_max_prompt_turns,
+            max_images=self.config.main_max_prompt_images,
+        )
 
         if prefix_content:
             for idx, message in enumerate(all_messages):
@@ -1574,6 +1732,15 @@ class StreamingInferAdapter:
         state: SessionState,
         internal_messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        if (
+            self.config.main_max_prompt_turns > 0
+            or self.config.main_max_prompt_images > 0
+        ):
+            return [
+                _internal_message_to_openai(message)
+                for message in internal_messages
+            ]
+
         cache = state.current_chunk["api_msg_cache"]
         chunk_msgs = state.current_chunk["messages"]
         # Incrementally convert new chunk messages and append to cache.
@@ -2349,6 +2516,18 @@ def parse_args() -> AdapterConfig:
     parser.add_argument("--max-pixels", type=int, default=_env_int("MAX_PIXELS", 262144))
     parser.add_argument("--main-max-tokens", type=int, default=_env_int("MAIN_MAX_TOKENS", 128))
     parser.add_argument(
+        "--main-max-prompt-turns",
+        type=int,
+        default=_env_int("MAIN_MAX_PROMPT_TURNS", 0),
+        help="Keep at most this many recent user turns in main-model prompts; 0 disables the limit.",
+    )
+    parser.add_argument(
+        "--main-max-prompt-images",
+        type=int,
+        default=_env_int("MAIN_MAX_PROMPT_IMAGES", 0),
+        help="Keep at most this many recent images in main-model prompts; 0 disables the limit.",
+    )
+    parser.add_argument(
         "--main-temperature",
         type=float,
         default=_env_float("MAIN_TEMPERATURE", 0.8),
@@ -2674,6 +2853,8 @@ def parse_args() -> AdapterConfig:
         frame_seconds=args.frame_seconds,
         max_pixels=args.max_pixels,
         main_max_tokens=args.main_max_tokens,
+        main_max_prompt_turns=max(0, args.main_max_prompt_turns),
+        main_max_prompt_images=max(0, args.main_max_prompt_images),
         main_temperature=args.main_temperature,
         main_top_p=args.main_top_p,
         main_top_k=args.main_top_k,

@@ -110,7 +110,8 @@ Recommended image input format is the OpenAI format:
    - `</silence>`
    - `</response> one-sentence reply`
 8. Every full `CHUNK` frames, an intermediate summary is generated. Every `COMPRESS_EVERY_N_CHUNKS` intermediate summaries, they are compressed into long-term memory.
-9. The response is returned as standard chat completion JSON, with extra `streamingharness.memory/timing/raw_content` fields.
+9. Optional prompt-window limits apply only to main-model requests; the full session continues through chunk summaries and long-term memory. A failed main-model request is rolled back so its frames are not appended again on retry.
+10. The response is returned as standard chat completion JSON, with extra `streamingharness.memory/timing/raw_content` fields.
 
 ## Key Parameters
 
@@ -125,6 +126,8 @@ Recommended image input format is the OpenAI format:
 | `ADAPTER_PORT` | `8070` | Adapter listen port. |
 | `MAIN_BACKENDS` | See `scripts/start_adapter.sh` | Main-model backend JSON, routed by request `model`. |
 | `MAIN_MAX_TOKENS` | Script default `256` | Main-model output length. |
+| `MAIN_MAX_PROMPT_TURNS` | `0` | Maximum recent user turns sent to the main model. `0` keeps the full current chunk. |
+| `MAIN_MAX_PROMPT_IMAGES` | `0` | Maximum recent images sent to the main model. `0` keeps all current-chunk images. |
 | `MAIN_TEMPERATURE` | `0.8` | Main-model sampling temperature. |
 | `CHUNK` | Script default `100` | Number of frames per memory chunk. |
 | `COMPRESS_EVERY_N_CHUNKS` | `5` | Number of intermediate summaries to accumulate before compressing into long-term memory. |

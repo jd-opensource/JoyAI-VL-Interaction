@@ -110,7 +110,8 @@ x-streaming-session: <sessionId>
    - `</silence>`
    - `</response> one-sentence reply`
 8. 每满 `CHUNK` 帧，会生成一条中间摘要。每累计 `COMPRESS_EVERY_N_CHUNKS` 条中间摘要，它们会被压缩为长期记忆。
-9. 响应以标准 chat completion JSON 返回，并带有额外的 `streamingharness.memory/timing/raw_content` 字段。
+9. 可选的提示窗口限制只作用于主模型请求；完整会话仍通过 chunk 摘要和长期记忆保留。主模型请求失败时会回滚本轮，避免重试后重复累计图像。
+10. 响应以标准 chat completion JSON 返回，并带有额外的 `streamingharness.memory/timing/raw_content` 字段。
 
 ## 关键参数
 
@@ -125,6 +126,8 @@ x-streaming-session: <sessionId>
 | `ADAPTER_PORT` | `8070` | 适配器监听端口。 |
 | `MAIN_BACKENDS` | 见 `scripts/start_adapter.sh` | 主模型后端 JSON，按请求中的 `model` 路由。 |
 | `MAIN_MAX_TOKENS` | 脚本默认 `256` | 主模型输出长度。 |
+| `MAIN_MAX_PROMPT_TURNS` | `0` | 发送给主模型的最近用户轮数上限；`0` 表示保留当前 chunk 的完整历史。 |
+| `MAIN_MAX_PROMPT_IMAGES` | `0` | 发送给主模型的最近图像数上限；`0` 表示保留当前 chunk 的全部图像。 |
 | `MAIN_TEMPERATURE` | `0.8` | 主模型采样温度。 |
 | `CHUNK` | 脚本默认 `100` | 每个记忆 chunk 的帧数。 |
 | `COMPRESS_EVERY_N_CHUNKS` | `5` | 压缩为长期记忆前累计的中间摘要数量。 |
