@@ -37,6 +37,7 @@ models/
 *.mp3
 *.flac
 *.mp4
+!demo/JoyAI-VL-Interaction-Glasses.mp4
 *.mov
 *.webm
 
