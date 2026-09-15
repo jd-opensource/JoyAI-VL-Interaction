@@ -38,6 +38,10 @@ models/
 *.flac
 *.mp4
 !demo/JoyAI-VL-Interaction-Glasses.mp4
+!demo/JoyAI-VL-Interaction-Blind_1.mp4
+!demo/JoyAI-VL-Interaction-Blind_2.mp4
+!demo/JoyAI-VL-Interaction-Blind_3.mp4
+!demo/JoyAI-VL-Interaction-Blind_4.mp4
 *.mov
 *.webm
 
