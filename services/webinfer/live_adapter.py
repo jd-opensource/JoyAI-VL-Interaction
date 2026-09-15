@@ -1087,6 +1087,7 @@ class StreamingInferAdapter:
         if header_system_prompt_key and not payload.get("system_prompt_key"):
             payload = dict(payload)
             payload["system_prompt_key"] = header_system_prompt_key
+        system_prompt_override, has_system_prompt_override = _extract_system_prompt_override(messages)
 
         image_refs = _extract_all_image_refs(messages, request, payload)
         if not image_refs:
@@ -1247,7 +1248,12 @@ class StreamingInferAdapter:
             internal_messages, prefix_content = self._build_main_internal_messages(state)
             api_messages = self._build_cached_api_messages(state, internal_messages)
             generation_kwargs = self._main_generation_kwargs(payload)
-            http_messages = self._build_main_http_messages(api_messages, payload)
+            http_messages = self._build_main_http_messages(
+                api_messages,
+                payload,
+                system_prompt=system_prompt_override,
+                system_prompt_overridden=has_system_prompt_override,
+            )
             turn_model_input_record = build_model_input_record(
                 chunk_index=state.chunk_index,
                 messages=http_messages,
@@ -1590,11 +1596,16 @@ class StreamingInferAdapter:
         self,
         api_messages: list[dict[str, Any]],
         payload: Optional[dict[str, Any]] = None,
+        *,
+        system_prompt: Optional[str] = None,
+        system_prompt_overridden: bool = False,
     ) -> list[dict[str, Any]]:
         messages = list(api_messages)
-        system_prompt = self._resolve_system_prompt(payload)
-        if system_prompt:
-            messages = [{"role": "system", "content": system_prompt}] + messages
+        effective_system_prompt = (
+            system_prompt if system_prompt_overridden else self._resolve_system_prompt(payload)
+        )
+        if effective_system_prompt:
+            messages = [{"role": "system", "content": effective_system_prompt}] + messages
         return messages
 
     def _resolve_system_prompt(self, payload: Optional[dict[str, Any]] = None) -> str:
@@ -2107,6 +2118,29 @@ def _extract_user_prompt_text(messages: list[dict[str, Any]]) -> str:
             ]
             return "\n".join(text_parts).strip()
     return ""
+
+
+def _extract_system_prompt_override(messages: list[dict[str, Any]]) -> tuple[str, bool]:
+    found = False
+    text_parts: list[str] = []
+    for message in messages:
+        if message.get("role") != "system":
+            continue
+        found = True
+        content = message.get("content")
+        if isinstance(content, str):
+            text = content.strip()
+            if text:
+                text_parts.append(text)
+            continue
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict) or item.get("type") != "text":
+                    continue
+                text = str(item.get("text", "")).strip()
+                if text:
+                    text_parts.append(text)
+    return "\n\n".join(text_parts).strip(), found
 
 
 def _extract_time_range_from_text(text: str) -> Optional[str]:
