@@ -217,8 +217,10 @@ Across **26 standard video understanding benchmarks**, JoyAI-VL-Interaction achi
 
 ## 😊 Community & Support
 
+For real-time community discussion, questions, and deployment help, please join our WeChat discussion group by scanning the QR code below. If the QR code expires, please open a GitHub issue and the maintainers can share the latest group invitation/contact information.
+
 <div align="center">
-  <img src="weixin.jpg" alt="qrcode3" width="50%" />
+  <img src="weixin.jpg" alt="JoyAI-VL-Interaction WeChat discussion group QR code" width="50%" />
 </div>
 
 ## 🙏 Acknowledgments
