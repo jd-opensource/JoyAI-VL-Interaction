@@ -8353,6 +8353,61 @@ limitations under the License.
 
         }
 
+        // Cache for the server-provided ICE configuration.
+        let cachedRtcConfig = null;
+
+        // Fetch ICE configuration (STUN/TURN + transport policy) from the
+        // server so a single source of truth controls both ends. Falls back
+        // to Google STUN if the endpoint is unavailable (older server).
+        async function getRtcConfig() {
+            if (cachedRtcConfig) {
+                return cachedRtcConfig;
+            }
+            try {
+                const resp = await fetch('/ice-config');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    cachedRtcConfig = {
+                        iceServers: data.iceServers || [],
+                    };
+                    if (data.iceTransportPolicy) {
+                        cachedRtcConfig.iceTransportPolicy = data.iceTransportPolicy;
+                    }
+                    console.log('Loaded ICE config from server:', cachedRtcConfig);
+                    return cachedRtcConfig;
+                }
+            } catch (e) {
+                console.warn('Failed to load /ice-config, using fallback STUN:', e);
+            }
+            cachedRtcConfig = {
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+            };
+            return cachedRtcConfig;
+        }
+
+        // Wait until ICE gathering completes so all candidates are embedded in
+        // the SDP before it is sent. Essential for SSH-tunnel / TURN setups
+        // where trickle ICE is not used. Times out to avoid hanging.
+        async function waitForIceGathering(pc, timeoutMs = 5000) {
+            if (pc.iceGatheringState === 'complete') {
+                return;
+            }
+            await new Promise((resolve) => {
+                const checkState = () => {
+                    if (pc.iceGatheringState === 'complete') {
+                        pc.removeEventListener('icegatheringstatechange', checkState);
+                        resolve();
+                    }
+                };
+                pc.addEventListener('icegatheringstatechange', checkState);
+                setTimeout(() => {
+                    pc.removeEventListener('icegatheringstatechange', checkState);
+                    console.warn('ICE gathering timeout - proceeding anyway');
+                    resolve();
+                }, timeoutMs);
+            });
+        }
+
         // Start WebRTC (Webcam mode)
         async function startWebcam(token) {
             try {
@@ -8380,9 +8435,8 @@ limitations under the License.
                 updateStatus('Connecting...', 'processing');
                 showProcessedVideoStream(localStream, token);
 
-                peerConnection = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                });
+                const rtcConfig = await getRtcConfig();
+                peerConnection = new RTCPeerConnection(rtcConfig);
 
                 localStream.getTracks().forEach(track => {
                     peerConnection.addTrack(track, localStream);
@@ -8411,6 +8465,10 @@ limitations under the License.
 
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
+
+                // Ensure all ICE candidates are embedded before sending the
+                // offer. Required for SSH-tunnel / TURN deployments.
+                await waitForIceGathering(peerConnection);
 
                 const response = await fetch('/offer', {
                     method: 'POST',
@@ -8456,9 +8514,8 @@ limitations under the License.
                 updateStatus('Connecting to RTSP stream...', 'processing');
 
                 // Create WebRTC peer connection (no local stream needed for RTSP)
-                peerConnection = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                });
+                const rtcConfig = await getRtcConfig();
+                peerConnection = new RTCPeerConnection(rtcConfig);
 
                 // Receive processed video from server
                 peerConnection.ontrack = (event) => {
@@ -8493,26 +8550,7 @@ limitations under the License.
                 // Wait for ICE gathering to complete before sending offer (with timeout)
                 // This ensures all ICE candidates are embedded in the SDP
                 console.log('Waiting for ICE gathering to complete...');
-                await new Promise((resolve) => {
-                    if (peerConnection.iceGatheringState === 'complete') {
-                        resolve();
-                    } else {
-                        const checkState = () => {
-                            if (peerConnection.iceGatheringState === 'complete') {
-                                peerConnection.removeEventListener('icegatheringstatechange', checkState);
-                                resolve();
-                            }
-                        };
-                        peerConnection.addEventListener('icegatheringstatechange', checkState);
-
-                        // Timeout after 5 seconds - proceed anyway to avoid hanging
-                        setTimeout(() => {
-                            peerConnection.removeEventListener('icegatheringstatechange', checkState);
-                            console.warn('ICE gathering timeout - proceeding anyway');
-                            resolve();
-                        }, 5000);
-                    }
-                });
+                await waitForIceGathering(peerConnection);
                 console.log('ICE gathering state:', peerConnection.iceGatheringState, '- sending offer');
 
                 // Send offer with RTSP URL and session to server
